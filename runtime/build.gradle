@@ -1,0 +1,9 @@
+plugins { id 'com.android.application' }
+dependencies { implementation project(':protocol'); implementation project(':account-android') }
+android {
+    namespace 'org.picomatrix.bridge'
+    compileSdk 35
+    defaultConfig { applicationId 'org.picomatrix.bridge'; minSdk 29; targetSdk 35; versionCode 1; versionName '0.1.0-dev'; testInstrumentationRunner 'org.picomatrix.bridge.AccountFlowInstrumentation' }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    packaging { jniLibs { useLegacyPackaging = true } }
+}

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="320" viewBox="0 0 1280 320" role="img" aria-labelledby="title desc">
+<title id="title">PICO Matrix Bridge</title><desc id="desc">PICO app compatibility, without changing your headset region.</desc>
+<rect width="1280" height="320" fill="#f1f0e8"/>
+<path d="M0 319.5H1280" stroke="#1a1c17"/>
+<rect x="992" width="288" height="320" fill="#b33921"/>
+<g fill="none" stroke="#e8c9a9" stroke-opacity=".42" stroke-width="1.5"><path d="M976 178L1093 40L1255 109L1182 278Z"/><path d="M992 53L1227 42L1280 258L1046 294Z"/><path d="M1093 40L1182 278L1255 109L976 178Z"/></g>
+<text x="1032" y="222" font-family="Arial,Helvetica,sans-serif" font-size="154" font-weight="700" letter-spacing="-15" fill="#f1e7d5">M<tspan fill="#1a1c17">/</tspan></text>
+<rect x="56" y="51" width="10" height="10" fill="#b33921"/>
+<text x="80" y="61" font-family="Arial,Helvetica,sans-serif" font-size="14" font-weight="700" letter-spacing="3" fill="#1a1c17">PICO APPS / YOUR ACCOUNT</text>
+<text x="52" y="169" font-family="Arial,Helvetica,sans-serif" font-size="68" font-weight="700" letter-spacing="-2" fill="#1a1c17">PICO Matrix Bridge</text>
+<text x="56" y="230" font-family="Arial,Helvetica,sans-serif" font-size="23" fill="#53564e">Keep your headset region. Bring your own account.</text>
+</svg>

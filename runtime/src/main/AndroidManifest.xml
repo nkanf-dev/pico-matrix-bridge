@@ -1,0 +1,9 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <queries><package android:name="org.picomatrix.bridge.vd"/></queries>
+    <application android:label="PICO Matrix Bridge" android:allowBackup="false" android:usesCleartextTraffic="false" android:extractNativeLibs="true" android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity>
+    </application>
+</manifest>

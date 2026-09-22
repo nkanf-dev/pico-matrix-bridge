@@ -1,0 +1,112 @@
+{
+  "id": "vd-1.34.22.0-arm64-research",
+  "status": "research",
+  "recipe": "vd-embedded-v5",
+  "package": "VirtualDesktop.Android",
+  "outputPackage": "org.picomatrix.bridge.vd",
+  "packageStrategy": "isolated application copy; retain the original application and its data",
+  "inputSha256": "7de165e7d6985e62223f8ac10aab01b74ed12bc80b7e987b3ac7027ca717d4eb",
+  "managedSigner": {
+    "entry": "lib/arm64-v8a/libassemblies.arm64-v8a.blob.so",
+    "sha256": "f0eeb1ef77540bad1365ab19c9cfc6b70cb174ebdc449717f80ce520dd510119",
+    "storeVersion": "0x80010002",
+    "assembly": "VirtualDesktop.Android.dll",
+    "assemblySha256": "4771d9e672cbad51cf1e55bf4bc7e89a05098cfdc65e2fa856dd6c1aa37f7de2",
+    "type": "VirtualDesktop.VrApp",
+    "method": "OnCreate",
+    "originalCertificateSha256": "d9960a7acc36666aad24e13369ec56aa2efc980a2d8eb3318a57ecaa50e64c8b"
+  },
+  "libraries": {
+    "lib/arm64-v8a/libpxrplatformloader.so": {
+      "sha256": "2881fc7db866b8427c487a48a529c98da1ec764ff5b830650d280ffbfcf05c9b",
+      "replacements": 1
+    }
+  },
+  "managedLoaderIntegrity": {
+    "assembly": "Pico.Platform.dll",
+    "assemblySha256": "70319cdb1fe4eb054c7f5b4dda6a0198a15da9cd78b4204c1672fdcb1731c6f9",
+    "type": "Pico.Platform.PlatformInitialize",
+    "method": ".ctor",
+    "library": "lib/arm64-v8a/libpxrplatformloader.so",
+    "expectedMd5Base64": "zH3KVmaMKWyst4CQOCrDLA==",
+    "expectedBytes": 382976
+  },
+  "managedSignerHashes": {
+    "assembly": "VirtualDesktop.Mobile.dll",
+    "assemblySha256": "0ef1dad0a2d4d687a5e1c2c630f4191c1551dd5762d5a9a8fbf885747a371e62",
+    "originalJavaHash": 1778352252,
+    "originalX509Hash": -1386013078,
+    "methods": [
+      {
+        "type": "VirtualDesktop.Mobile.InputSystem",
+        "method": ".ctor",
+        "hash": "java",
+        "subtract": 0,
+        "count": 1,
+        "requiredCalls": [
+          "Android.Content.PM.PackageInfo::get_Signatures",
+          "System.Object::GetHashCode"
+        ]
+      },
+      {
+        "type": "VirtualDesktop.Mobile.Keyboard",
+        "method": ".ctor",
+        "hash": "x509",
+        "subtract": 0,
+        "count": 2,
+        "requiredCalls": [
+          "Android.Content.PM.SigningInfo::GetApkContentsSigners",
+          "System.Security.Cryptography.X509Certificates.X509CertificateLoader::LoadCertificate",
+          "System.Object::GetHashCode"
+        ]
+      },
+      {
+        "type": "VirtualDesktop.Mobile.UserSettings",
+        "method": "<GetHasValidIdentityAsync>b__474_0",
+        "hash": "java",
+        "subtract": 22,
+        "count": 1,
+        "requiredCalls": [
+          "Android.Content.PM.PackageInfo::get_Signatures",
+          "System.Object::GetHashCode"
+        ]
+      }
+    ]
+  },
+  "aotSignerHashes": {
+    "entry": "lib/arm64-v8a/libaot-VirtualDesktop.Mobile.dll.so",
+    "sha256": "e80317332f1fab61b645e56a99e598d71fa756d98bc37cbddee1b71a8b14c599",
+    "architecture": "aarch64",
+    "comparisons": [
+      {
+        "method": "InputSystem::.ctor",
+        "methodToken": "0x060002b3",
+        "hash": "java",
+        "expected": 1778352252,
+        "low": "0x99ef4",
+        "high": "0x99ef8",
+        "compare": "0x99efc"
+      },
+      {
+        "method": "Keyboard::.ctor",
+        "methodToken": "0x060002b6",
+        "hash": "x509",
+        "expected": -1386013078,
+        "low": "0x9a7c4",
+        "high": "0x9a7d0",
+        "compare": "0x9a7dc"
+      },
+      {
+        "method": "UserSettings::<GetHasValidIdentityAsync>b__474_0",
+        "methodToken": "0x060007c7",
+        "hash": "java",
+        "expected": 1778352252,
+        "low": "0x106208",
+        "high": "0x10620c",
+        "compare": "0x106210"
+      }
+    ]
+  },
+  "versionCode": 10703,
+  "appVersion": "1.34.22.0"
+}
