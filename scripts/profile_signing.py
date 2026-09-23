@@ -17,6 +17,15 @@ def certificate_sha256(path=OFFICIAL_CERTIFICATE):
     return hashlib.sha256(ssl.PEM_cert_to_DER_cert(pem)).hexdigest()
 
 
+def parse_signer_sha256(output):
+    digests = {match.lower() for match in re.findall(
+        r'^(?:Signer #\d+|V\d+ Signer:) certificate SHA-256 digest: ([0-9a-fA-F]{64})$',
+        output, re.MULTILINE)}
+    if len(digests) != 1:
+        raise ValueError(f'Cannot establish a unique APK signer from apksigner output: {output!r}')
+    return digests.pop()
+
+
 def apk_signer(path):
     sdk = Path(os.environ.get('ANDROID_HOME') or os.environ.get('ANDROID_SDK_ROOT') or '')
     binaries = sorted((sdk / 'build-tools').glob('*/apksigner'), reverse=True)
@@ -24,7 +33,4 @@ def apk_signer(path):
         raise ValueError('ANDROID_HOME must provide Android build-tools/apksigner')
     result = subprocess.run([str(binaries[0]), 'verify', '--print-certs', str(path)],
                             check=True, capture_output=True, text=True)
-    matches = re.findall(r'Signer #1 certificate SHA-256 digest:\s*([0-9a-fA-F]{64})', result.stdout)
-    if len(matches) != 1:
-        raise ValueError(f'Cannot establish APK signer from {binaries[0]} output: {result.stdout!r}')
-    return matches[0].lower()
+    return parse_signer_sha256(result.stdout)
