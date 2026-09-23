@@ -13,6 +13,9 @@ __pycache__/
 *.so
 *.jks
 *.keystore
+*.p12
+*.pfx
+*.key
 .local/
 samples/
 vendor/

@@ -2,13 +2,13 @@ plugins { id 'com.android.application' }
 group = 'org.picomatrix.bridge'
 
 def releaseSigning = [
-    storeFile: providers.environmentVariable('PICO_ANDROID_KEYSTORE').orNull,
-    keyAlias: providers.environmentVariable('PICO_ANDROID_KEY_ALIAS').orNull,
-    storePassword: providers.environmentVariable('PICO_ANDROID_STORE_PASSWORD').orNull,
-    keyPassword: providers.environmentVariable('PICO_ANDROID_KEY_PASSWORD').orNull,
+    storeFile: providers.environmentVariable('PICO_PROFILE_KEYSTORE').orNull,
+    keyAlias: providers.environmentVariable('PICO_PROFILE_KEY_ALIAS').orNull,
+    storePassword: providers.environmentVariable('PICO_PROFILE_STORE_PASSWORD').orNull,
+    keyPassword: providers.environmentVariable('PICO_PROFILE_KEY_PASSWORD').orNull,
 ]
 if (releaseSigning.values().any { it } && !releaseSigning.values().every { it })
-    throw new GradleException('Provide all four PICO_ANDROID signing environment variables')
+    throw new GradleException('Provide all four PICO_PROFILE signing environment variables')
 
 def defaultBuiltAt = java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS)
 

@@ -33,7 +33,7 @@ VD profile 固定原始 APK、程序集、方法、字符串和原生指令的�
 
 ## 4. 构建与检查
 
-按 [开发说明](development.md) 分别生成通用 runtime bundle 和各个签名 profile APK，再构建 Lab。`scripts/profile_registry.py` 会在源码检查和构建 profile 时拒绝重复匹配规则；Lab 集成构建也会核对实际打包 APK。bundle 清单记录 runtime/bootstrap 身份，应用 recipe 留在 profile。release 构建默认不带诊断探针。每个 profile 使用更新的 UTC 秒，在 Bridge 仓库创建 `<key>-profile-YYYYMMDDTHHMMSSZ` release 并附上 `matrix-profile-<key>.apk`；Lab 下载后校验哈希与 Lab 同签名再切换，失败保留已验证版本。新增社区 profile 可独立提交清单、代码与检查样本，经维护者审查和同签名构建后发布；Lab 按 key 自动发现。
+按 [开发说明](development.md) 分别生成通用 runtime bundle 和各个签名 profile APK，再构建 Lab。`scripts/profile_registry.py` 会在源码检查和构建 profile 时拒绝重复匹配规则；Lab 集成构建也会核对实际打包 APK。bundle 清单记录 runtime/bootstrap 身份，应用 recipe 留在 profile。release 构建默认不带诊断探针。每个 profile 使用更新的 UTC 秒，由 `Publish signed profile` 工作流使用独立发布密钥签名，在 Bridge 仓库创建 `<key>-profile-YYYYMMDDTHHMMSSZ` release 并附上 `matrix-profile-<key>.apk` 与 SHA256SUMS；Lab 下载后校验哈希和固定的 profile 发布证书再切换，失败保留已验证版本。新增社区 profile 可独立提交清单、代码与检查样本，经维护者审查后由发布工作流签名；Lab 按 key 自动发现。参见 [贡献指南](../CONTRIBUTING.md)。
 
 ```sh
 ./scripts/verify.sh

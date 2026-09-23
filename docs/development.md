@@ -24,16 +24,16 @@ cp /absolute/research/analysis/build-001/profile-{vd,generic}/matrix-profile-*.a
 python3 scripts/build_lab.py --lab /absolute/source/pico-store --bundle /absolute/research/analysis/build-001/compatibility-bundle --profiles-dir /absolute/research/analysis/build-001/profiles
 ```
 
-bundle 默认使用 release runtime，不包含应用 recipe、诊断探针、账号或签名私钥。它包含供应代码，只在本地研究目录保存；不要提交 Git 或上传 CI artifact。每个 profile APK 包含自己的适配代码和 recipe；调试版使用 Lab 的默认调试签名，发布版必须使用同一组 `PICO_ANDROID_*` 发布签名变量。profile 版本使用构建时的 UTC 秒：APK versionCode 为 Unix 秒，versionName 和内嵌元数据为 ISO UTC 时间。重现构建可指定 `--built-at 2026-09-23T12:34:56Z`。
+bundle 默认使用 release runtime，不包含应用 recipe、诊断探针、账号或签名私钥。它包含供应代码，只在本地研究目录保存；不要提交 Git 或上传 CI artifact。每个 profile APK 包含自己的适配代码和 recipe；发布版由独立的 profile 发布密钥签名，使用 `PICO_PROFILE_KEYSTORE`、`PICO_PROFILE_KEY_ALIAS`、`PICO_PROFILE_STORE_PASSWORD`、`PICO_PROFILE_KEY_PASSWORD`。profile 版本使用构建时的 UTC 秒：APK versionCode 为 Unix 秒，versionName 和内嵌元数据为 ISO UTC 时间。重现构建可指定 `--built-at 2026-09-23T12:34:56Z`。贡献者可用自己的密钥构建，并用 `--development-profile-certificate` 验证本地 APK 和 Lab 集成构建。
 
 `build_lab.py` 编译并检查 Lab 集成版，不安装设备。对应原始 Gradle 命令：
 
 ```sh
 cd /absolute/source/pico-store/apps/android
-./gradlew :app:testDebugUnitTest :app:assembleDebug -PmatrixBridgeDir=/absolute/source/pico-matrix-bridge -PmatrixBundleDir=/absolute/research/analysis/build-001/compatibility-bundle -PmatrixProfileDir=/absolute/research/analysis/build-001/profiles
+./gradlew :app:testDebugUnitTest :app:assembleDebug -PmatrixBridgeDir=/absolute/source/pico-matrix-bridge -PmatrixBundleDir=/absolute/research/analysis/build-001/compatibility-bundle -PmatrixProfileDir=/absolute/research/analysis/build-001/profiles -PmatrixProfileSignerSha256=<profile-publisher-certificate-sha256>
 ```
 
-去掉三个属性即可检查普通 Lab。两种构建共用输出目录，每次以最后一次构建为准。`build_lab.py` 会读取产物并验证打包的 bundle、全部 profile 与 Lab 签名确实匹配输入。Lab 从 Bridge 仓库读取 `<key>-profile-YYYYMMDDTHHMMSSZ` releases，按 key 独立更新或添加已签名 profile，不需要更新 Lab APK。
+去掉四个属性即可检查普通 Lab。两种构建共用输出目录，每次以最后一次构建为准。`build_lab.py` 会读取产物并验证打包的 bundle、全部 profile、profile 发布者签名与 Lab 签名。Lab 从 Bridge 仓库读取 `<key>-profile-YYYYMMDDTHHMMSSZ` releases，按 key 独立更新或添加已签名 profile，不需要更新 Lab APK。
 
 ## 样本回归
 

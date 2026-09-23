@@ -12,11 +12,11 @@ import java.util.zip.ZipFile;
 import org.json.JSONObject;
 import org.picomatrix.bridge.adapter.ApplicationProfile;
 
-/** Same-signer profile APKs; code is loaded only after full verification. */
+/** Publisher-signed profile APKs; code is loaded only after full verification. */
 public final class ProfileStore {
     public static final long MAX_BYTES=32L*1024*1024;
     private final Context context;
-    private final String packageName,assetName;
+    private final String packageName,assetName,trustedSignerSha256;
     private final File directory;
 
     public static final class Loaded {
@@ -29,10 +29,13 @@ public final class ProfileStore {
         }
     }
 
-    public ProfileStore(Context context,String packageName,String bundledAsset) {
+    public ProfileStore(Context context,String packageName,String bundledAsset,String trustedSignerSha256) {
         this.context=context.getApplicationContext();this.packageName=packageName;this.assetName=bundledAsset;
         if(!packageName.matches("org\\.picomatrix\\.bridge\\.profile\\.[a-z][a-z0-9_]*") ||
-            (bundledAsset!=null&&!bundledAsset.matches("matrix-profile-[a-z][a-z0-9_]*\\.apk")))throw new IllegalArgumentException("Invalid profile identity");
+            (bundledAsset!=null&&!bundledAsset.matches("matrix-profile-[a-z][a-z0-9_]*\\.apk")) ||
+            trustedSignerSha256==null || !trustedSignerSha256.matches("[a-f0-9]{64}"))
+            throw new IllegalArgumentException("Invalid profile identity or trust anchor");
+        this.trustedSignerSha256=trustedSignerSha256;
         directory=new File(this.context.getFilesDir(),"matrix-profiles/"+packageName);
     }
 
@@ -113,7 +116,7 @@ public final class ProfileStore {
     private Loaded load(File file,String expectedHash) throws Exception {
         if(!file.isFile()||file.length()<=0||file.length()>MAX_BYTES||!file.canRead()||file.canWrite())throw new IOException("profile_file");
         if(!LocalSigner.hash(file).equals(expectedHash))throw new SecurityException("profile_digest");
-        if(!LocalSigner.verify(file).equals(LocalSigner.installedSigner(context,context.getPackageName())))
+        if(!LocalSigner.verify(file).equals(trustedSignerSha256))
             throw new SecurityException("profile_signer");
         PackageInfo info=context.getPackageManager().getPackageArchiveInfo(file.getAbsolutePath(),0);
         if(info==null||!packageName.equals(info.packageName)||info.getLongVersionCode()<=0)throw new SecurityException("profile_package");

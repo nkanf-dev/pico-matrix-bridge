@@ -13,6 +13,7 @@ import shutil
 import subprocess
 from datetime import datetime, timezone
 from profile_registry import load
+from profile_signing import OFFICIAL_CERTIFICATE, apk_signer, certificate_sha256
 
 ROOT=Path(__file__).resolve().parents[1]
 
@@ -27,6 +28,8 @@ def main():
     parser.add_argument('--profile-source',type=Path,default=ROOT/'profiles/clients/vd-1.34.22.0-research.json')
     parser.add_argument('--output',required=True,type=Path)
     parser.add_argument('--variant',choices=['debug','release'],default='debug')
+    parser.add_argument('--development-profile-certificate',type=Path,
+                        help='local build only: verify a contributor-owned profile signing certificate')
     parser.add_argument('--built-at',help='UTC build time, for example 2026-09-23T12:34:56Z; defaults to current UTC second')
     args=parser.parse_args()
     built_at=(datetime.strptime(args.built_at,'%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc)
@@ -34,9 +37,9 @@ def main():
     version_name=built_at.strftime('%Y-%m-%dT%H:%M:%SZ')
     version_code=int(built_at.timestamp())
     if version_code<1 or version_code>2100000000:raise ValueError('profile build time is outside Android versionCode range')
-    signing=('PICO_ANDROID_KEYSTORE','PICO_ANDROID_KEY_ALIAS','PICO_ANDROID_STORE_PASSWORD','PICO_ANDROID_KEY_PASSWORD')
+    signing=('PICO_PROFILE_KEYSTORE','PICO_PROFILE_KEY_ALIAS','PICO_PROFILE_STORE_PASSWORD','PICO_PROFILE_KEY_PASSWORD')
     if args.variant=='release' and not all(os.environ.get(name) for name in signing):
-        raise ValueError('Release profile requires the same PICO_ANDROID signing variables as Lab')
+        raise ValueError('Release profile requires all PICO_PROFILE signing variables')
     output=args.output.resolve()
     if output.exists():raise ValueError('Profile output must be new; preserve previous build')
     output.mkdir(parents=True)
@@ -64,6 +67,8 @@ def main():
                         '--console=plain'],cwd=ROOT,check=True)
         apk=ROOT/'profile-vd/build/outputs/apk'/args.variant/f'profile-vd-{args.variant}.apk'
         if not apk.is_file():raise ValueError('Profile APK build is missing')
+        if args.variant=='release' and apk_signer(apk)!=certificate_sha256(args.development_profile_certificate or OFFICIAL_CERTIFICATE):
+            raise ValueError('Profile APK signer differs from the trusted publisher certificate')
         target=output/'matrix-profile-vd.apk';shutil.copyfile(apk,target)
         print(json.dumps({'profile':str(target),'versionCode':version_code,'versionName':version_name,'sha256':digest(target),'signed':True,
                           'installed':False,'published':False}))

@@ -23,13 +23,13 @@ Lab 登录 / 恢复账号
 | `profile-vd-code` / `profile-vd` | 完整 VD 适配实现及其独立签名 APK |
 | `profile-generic-code` / `profile-generic` | 通用 native Matrix 适配实现及其独立签名 APK |
 | `account-android` | Passport 登录、会话迁移、目标应用授权和安装后交接 |
-| `installer-android` | profile 同签名校验与动态加载、Android Keystore 签名、PackageInstaller、结果收据和恢复 |
+| `installer-android` | profile 发布证书校验与动态加载、Android Keystore 签名、PackageInstaller、结果收据和恢复 |
 | `embedded-bootstrap` / `runtime` | 应用内启动、登录、Matrix SDK 路由和授权续期 |
 | `tools` / `scripts` | 协议提取、profile 编译、bundle 构建和离线检查 |
 
 ## 宿主调用
 
-在工作线程运行网络请求和 APK 准备。将通用 bundle 放在 assets 的 `matrix-bridge/`，将初始已签名 profile 放在 `matrix-profile-<key>.apk`。`ProfileStore` 仅在验证它与 Lab 同签名、API 和包身份后从私有只读文件加载代码：
+在工作线程运行网络请求和 APK 准备。将通用 bundle 放在 assets 的 `matrix-bridge/`，将初始已签名 profile 放在 `matrix-profile-<key>.apk`。`ProfileStore` 仅在验证固定的 profile 发布证书、API 和包身份后从私有只读文件加载代码：
 
 ```java
 MatrixAccount account = new MatrixAccount(context);
@@ -43,7 +43,8 @@ File bundle = AssetBundle.open(context, "matrix-bridge");
 List<ApplicationProfile> profiles = new ArrayList<>();
 for (String key : discoveredKeys) {
     ProfileStore store = new ProfileStore(context, "org.picomatrix.bridge.profile." + key,
-        bundledKeys.contains(key) ? "matrix-profile-" + key + ".apk" : null);
+        bundledKeys.contains(key) ? "matrix-profile-" + key + ".apk" : null,
+        BuildConfig.PROFILE_SIGNER_SHA256);
     profiles.add(store.current().implementation);
 }
 AdapterEngine.Inspection result = AdapterEngine.inspect(downloadedApk, bundle, profiles);

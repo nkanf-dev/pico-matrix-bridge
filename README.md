@@ -48,7 +48,7 @@ To build a compatibility bundle and the integrated Lab APK, follow [development 
 
 ## Maintaining support
 
-[The maintenance guide](docs/maintenance.md) covers protocol changes, application profiles and repeatable builds. Profiles identify the source version and the changes to apply, so updates use the same preparation pipeline.
+[The maintenance guide](docs/maintenance.md) covers protocol changes, application profiles and repeatable builds. [Contributing profiles](CONTRIBUTING.md) explains how to add and test one. Profiles identify the source version and the changes to apply, so updates use the same preparation pipeline.
 
 ## License
 
