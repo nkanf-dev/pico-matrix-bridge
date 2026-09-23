@@ -56,7 +56,7 @@ public final class GenericMatrixProfile implements ApplicationProfile {
         JSONObject approved=recipe.getJSONObject("libraries");int checked=0;
         String target=AdapterEngine.genericTargetPackage(ApkInspector.inspect(original).getJSONObject("manifest").getString("package"));
         try(ZipFile before=new ZipFile(original.toFile());ZipFile after=new ZipFile(unsigned.toFile())) {
-            for(String entry:approved.keySet())if(before.getEntry(entry)!=null) {
+            for(String entry:Portable.keys(approved))if(before.getEntry(entry)!=null) {
                 JSONObject rule=approved.getJSONObject(entry);
                 byte[] originalBytes=AdapterEngine.entry(before,entry,16*1024*1024);
                 if(!Portable.sha(originalBytes).equals(rule.getString("sha256")))continue;

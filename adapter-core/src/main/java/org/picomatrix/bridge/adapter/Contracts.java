@@ -75,7 +75,7 @@ public final class Contracts {
         throw new IllegalArgumentException("unsupported WireField metadata type " + value.getValueType());
     }
     public JSONObject json() {
-        return new JSONObject().put("commands", commands).put("messages", messages)
+        return new JSONObject().put("commands", new JSONObject(commands)).put("messages", new JSONObject(messages))
             .put("commandCount", commands.size()).put("messageCount", messages.size());
     }
 }

@@ -10,3 +10,4 @@ for manifest in profiles/*/manifest.json; do
   profile_tests+=(":profile-$key-code:test")
 done
 ./gradlew --console=plain :tools:test :tools:installDist :adapter-core:test "${profile_tests[@]}" :protocol:test :installer-core:test :account-android:testDebugUnitTest :installer-android:testDebugUnitTest :runtime:assembleRelease :embedded-bootstrap:assembleRelease :installer-android:lintDebug
+python3 scripts/check_android_json_api.py --android-jar "${ANDROID_HOME:-$ANDROID_SDK_ROOT}/platforms/android-35/android.jar" adapter-core/build/classes/java/main profiles/*/code/build/classes/java/main
