@@ -24,7 +24,7 @@ def apk_signer(path):
         raise ValueError('ANDROID_HOME must provide Android build-tools/apksigner')
     result = subprocess.run([str(binaries[0]), 'verify', '--print-certs', str(path)],
                             check=True, capture_output=True, text=True)
-    matches = re.findall(r'Signer #1 certificate SHA-256 digest: ([0-9a-f]{64})', result.stdout)
+    matches = re.findall(r'Signer #1 certificate SHA-256 digest:\s*([0-9a-fA-F]{64})', result.stdout)
     if len(matches) != 1:
-        raise ValueError('Cannot establish APK signer')
-    return matches[0]
+        raise ValueError(f'Cannot establish APK signer from {binaries[0]} output: {result.stdout!r}')
+    return matches[0].lower()
