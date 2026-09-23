@@ -21,13 +21,27 @@ public class RouteTest {
             .put("source",new JSONObject().put("sha256",hash)).put("managedRuntime",new JSONObject().put("requiresManagedCodeReview",false))
             .put("matrix",new JSONObject().put("detected",true).put("dexReferences",new JSONArray()).put("libraries",new JSONArray().put(new JSONObject().put("entry",LIB).put("sha256","loaderhash"))));
     }
-    @Test public void knownPackageMismatchNeverFallsThroughToOtherwiseEligibleGenericRoute() throws Exception {
+    @Test public void knownPackageMismatchTriesProfileWithoutFallingThroughToGenericRoute() throws Exception {
         Path dir=Files.createTempDirectory("matrix-route-");try {
             var bundle=bundle(dir);
             assertEquals(AdapterEngine.Route.PROFILE,AdapterEngine.select(report("VirtualDesktop.Android","original"),bundle).route);
-            assertEquals(AdapterEngine.Route.ANALYSIS_REQUIRED,AdapterEngine.select(report("VirtualDesktop.Android","changed"),bundle).route);
+            assertTrue(AdapterEngine.select(report("VirtualDesktop.Android","original"),bundle).profileExact);
+            assertEquals(AdapterEngine.Route.PROFILE,AdapterEngine.select(report("VirtualDesktop.Android","changed"),bundle).route);
+            assertFalse(AdapterEngine.select(report("VirtualDesktop.Android","changed"),bundle).profileExact);
+            JSONObject newer=report("VirtualDesktop.Android","changed");newer.getJSONObject("manifest").put("versionCode",10704);
+            assertEquals(AdapterEngine.Route.PROFILE,AdapterEngine.select(newer,bundle).route);
+            assertFalse(AdapterEngine.select(newer,bundle).profileExact);
+            assertEquals(AdapterEngine.Route.ANALYSIS_REQUIRED,AdapterEngine.select(newer,null).route);
             assertEquals(AdapterEngine.Route.GENERIC,AdapterEngine.select(report("another.native.app","changed"),bundle).route);
         } finally {Portable.deleteTree(dir);}
+    }
+    @Test public void preparedAttemptCanUseAnotherArchiveOnlyWhenThePackageStillMatches() {
+        JSONObject input=report("VirtualDesktop.Android","changed");
+        JSONObject profile=new JSONObject().put("id","vd").put("status","research").put("package","VirtualDesktop.Android").put("inputSha256","original");
+        assertThrows(IllegalArgumentException.class,()->ResearchAdapter.admission(input,profile));
+        assertEquals("changed",ResearchAdapter.admission(input,profile,true).getJSONObject("source").getString("sha256"));
+        input.getJSONObject("manifest").put("package","other.app");
+        assertThrows(IllegalArgumentException.class,()->ResearchAdapter.admission(input,profile,true));
     }
     @Test public void ambiguousIdentityDexRoutingAndUnknownNativeLibrariesRequireAnalysis() throws Exception {
         Path dir=Files.createTempDirectory("matrix-route-");try {
@@ -68,9 +82,12 @@ public class RouteTest {
             Portable.json(dir.resolve("bundle.json"),index);
             assertTrue(AdapterEngine.supportsProfile(dir,"VirtualDesktop.Android",10703));
             assertFalse(AdapterEngine.supportsProfile(dir,"VirtualDesktop.Android",10704));
+            assertTrue(AdapterEngine.canAttemptProfile(dir,"VirtualDesktop.Android"));
+            assertFalse(AdapterEngine.canAttemptProfile(dir,"other.package"));
             assertFalse(AdapterEngine.supportsProfile(dir,"other.package",10703));
             Files.write(dir.resolve("recipe.json"),new byte[]{1,2,3});
             assertFalse(AdapterEngine.supportsProfile(dir,"VirtualDesktop.Android",10703));
+            assertFalse(AdapterEngine.canAttemptProfile(dir,"VirtualDesktop.Android"));
             assertFalse(AdapterEngine.supportsProfile(dir.resolve("missing"),"VirtualDesktop.Android",10703));
         } finally {Portable.deleteTree(dir);}
     }

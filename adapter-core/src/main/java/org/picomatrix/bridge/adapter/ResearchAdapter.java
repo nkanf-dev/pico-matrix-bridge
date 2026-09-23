@@ -15,7 +15,10 @@ public final class ResearchAdapter {
     private static final byte[] ORIGINAL="com.bytedance.pico.matrix\0".getBytes(StandardCharsets.US_ASCII);
     private static String hash(byte[] bytes) throws Exception { return Portable.hex(MessageDigest.getInstance("SHA-256").digest(bytes)); }
     public static JSONObject admission(JSONObject inspection,JSONObject profile) {
-        if(!"research".equals(profile.getString("status")) || !profile.getString("inputSha256").equals(inspection.getJSONObject("source").getString("sha256")))
+        return admission(inspection,profile,false);
+    }
+    static JSONObject admission(JSONObject inspection,JSONObject profile,boolean preparedAttempt) {
+        if(!"research".equals(profile.getString("status")) || (!preparedAttempt && !profile.getString("inputSha256").equals(inspection.getJSONObject("source").getString("sha256"))))
             throw new IllegalArgumentException("input is not the pinned research sample");
         if(!profile.getString("package").equals(inspection.getJSONObject("manifest").getString("package")))
             throw new IllegalArgumentException("profile package differs from input");
@@ -140,10 +143,10 @@ public final class ResearchAdapter {
     }
     static JSONObject adapt(Path input,Path output,JSONObject profile,JSONObject preparedManaged,JSONObject inspected,boolean generic) throws Exception {
         if(Files.exists(output)) throw new IllegalArgumentException("research output already exists");
-        JSONObject assessment=admission(inspected,profile);
+        JSONObject assessment=admission(inspected,profile,preparedManaged!=null);
         if(preparedManaged==null) requireAdmission(assessment);
         else if(!generic && (!"vd-embedded-v5".equals(profile.optString("recipe")) ||
-                !profile.getString("inputSha256").equals(preparedManaged.getString("inputSha256")) ||
+                !inspected.getJSONObject("source").getString("sha256").equals(preparedManaged.getString("inputSha256")) ||
                 !preparedManaged.getBoolean("controlFlowUnchanged") || !preparedManaged.getBoolean("onlyIntegrityConstantsChanged") ||
                 !preparedManaged.getBoolean("metadataIdentityUnchanged")))
             throw new IllegalArgumentException("VD managed preparation is incomplete");

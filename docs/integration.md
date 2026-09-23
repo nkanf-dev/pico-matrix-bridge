@@ -7,7 +7,7 @@ Lab 登录 / 恢复账号
   → 取得应用并校验下载
   → 检查 APK
       ├─ 普通应用：保留原包与签名
-      ├─ 已知应用：选择精确版本的 profile
+      ├─ 已知应用：精确版本使用 profile；其他版本可显式尝试
       ├─ 可识别的通用 Matrix 接入：使用通用适配
       └─ 未支持或有歧义：保留下载，提示更新支持
   → 准备副本并签名
@@ -44,7 +44,7 @@ installer.prepareAndInstall(downloadedApk, bundle, MatrixInstaller.Mode.ADAPTED)
 // 界面销毁时 subscription.close()；安装结果由 manifest receiver 接收。
 ```
 
-`Mode.ORIGINAL` 安装保留签名的原包；`Mode.ADAPTED` 要求检测结果支持适配，否则停止并返回原因。两参数的 `prepareAndInstall` 保留自动路由方式。详情页可用 `AdapterEngine.supportsProfile(bundle, packageName, versionCode)` 查询精确版本支持，下载后以 `inspect` 的结果为准。检测记录应按原包名和版本保存，在用户暂不安装时也予以保留。
+`Mode.ORIGINAL` 安装保留签名的原包；`Mode.ADAPTED` 要求检测结果可进入适配准备，否则停止并返回原因。两参数的 `prepareAndInstall` 保留自动路由方式。详情页可用 `AdapterEngine.supportsProfile(bundle, packageName, versionCode)` 查询精确版本支持，用 `canAttemptProfile(bundle, packageName)` 显示其他版本的尝试入口。尝试时逐项验证补丁输入；不兼容就保留下载和已安装副本，不自动改装原版。下载后以 `inspect` 的结果为准。检测记录应按原包名和版本保存，在用户暂不安装时也予以保留。
 
 观察回调不保证在 UI 线程。Activity 重建后重新订阅并调用 `reconcile()`。`prepareAndInstall` 返回表示已提交系统安装，不表示应用已装好。正式结果来自 `InstallationStatus`：
 

@@ -17,7 +17,7 @@ public final class AdapterEngine {
     public enum Route { PASSTHROUGH, PROFILE, GENERIC, ANALYSIS_REQUIRED }
     public static final class Inspection {
         public final Route route;
-        public final boolean matrixDetected;
+        public final boolean matrixDetected,profileExact;
         public final long versionCode;
         public final String packageName,profileId,appId,reason,inputSha256;
         private final JSONObject report,profile;
@@ -28,6 +28,8 @@ public final class AdapterEngine {
             this.versionCode=versionCode(manifest);
             this.matrixDetected=report.getJSONObject("matrix").getBoolean("detected");
             this.inputSha256=report.getJSONObject("source").getString("sha256");
+            this.profileExact=route==Route.PROFILE && profile!=null && inputSha256.equals(profile.optString("inputSha256")) &&
+                (!profile.has("versionCode") || versionCode==profile.optLong("versionCode",-1));
             this.profileId=profile==null?null:profile.optString("id",null);this.appId=profile==null?null:profile.optString("appId",null);
         }
     }
@@ -72,6 +74,14 @@ public final class AdapterEngine {
         return profile!=null && packageName!=null && versionCode>0 && packageName.equals(profile.optString("package"))
             && versionCode==profile.optLong("versionCode",-1);
     }
+    /** A matching package may try the profile even when its version has not been validated. */
+    public static boolean canAttemptProfile(File bundle,String packageName) {
+        return bundle!=null && canAttemptProfile(bundle.toPath(),packageName);
+    }
+    public static boolean canAttemptProfile(Path bundle,String packageName) {
+        JSONObject profile=profileMetadata(bundle);
+        return profile!=null && packageName!=null && packageName.equals(profile.optString("package"));
+    }
     public static String targetPackage(File bundle,String originalPackage) {
         return targetPackage(bundle==null?null:bundle.toPath(),originalPackage);
     }
@@ -112,9 +122,9 @@ public final class AdapterEngine {
         JSONObject profile=bundle==null?null:bundle.recipe.getJSONObject("profile");
         if(packageName.equals("VirtualDesktop.Android")||(profile!=null&&packageName.equals(profile.getString("package")))) {
             if(profile==null)return new Inspection(Route.ANALYSIS_REQUIRED,report,null,"The application requires its pinned compatibility bundle");
-            if(!profile.getString("inputSha256").equals(report.getJSONObject("source").getString("sha256")) ||
-                    (profile.has("versionCode") && profile.getLong("versionCode")!=versionCode(report.getJSONObject("manifest"))))return new Inspection(Route.ANALYSIS_REQUIRED,report,profile,"Known application version changed; update the profile");
-            return new Inspection(Route.PROFILE,report,profile,"Checked application override");
+            boolean exact=profile.getString("inputSha256").equals(report.getJSONObject("source").getString("sha256")) &&
+                (!profile.has("versionCode") || profile.getLong("versionCode")==versionCode(report.getJSONObject("manifest")));
+            return new Inspection(Route.PROFILE,report,profile,exact?"Checked application override":"Profile attempt; targeted inputs still require verification");
         }
         if(!report.getJSONObject("matrix").getBoolean("detected"))return new Inspection(Route.PASSTHROUGH,report,null,"Ordinary application retains original install identity and signature");
         if(report.getJSONObject("managedRuntime").getBoolean("requiresManagedCodeReview"))return new Inspection(Route.ANALYSIS_REQUIRED,report,null,"Unknown managed Matrix runtime requires analysis");
