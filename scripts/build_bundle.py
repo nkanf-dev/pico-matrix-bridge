@@ -18,7 +18,6 @@ import shutil
 import subprocess
 import zipfile
 from elftools.elf.elffile import ELFFile
-from compile_vd_profile import compile_recipe
 
 ROOT=Path(__file__).resolve().parents[1]
 
@@ -31,8 +30,8 @@ def build(args):
     matrix_profile=ROOT/'profiles/matrix-global-6.3.4.json'
     matrix=json.loads(matrix_profile.read_text())
     if sha(args.matrix)!=matrix['source']['sha256']:raise ValueError('Matrix input differs from pinned profile')
-    profile=json.loads((ROOT/'profiles/clients/vd-1.34.22.0-research.json').read_text())
-    recipe=compile_recipe(args.client,profile)
+    generic=json.loads((ROOT/'profiles/native-matrix-v1.json').read_text())
+    if generic['schema']!=1:raise ValueError('Unknown generic Matrix profile')
     variant='debug' if args.research_diagnostics else 'release'
     def artifact(module):
         folder=ROOT/module/f'build/outputs/apk/{variant}'
@@ -51,28 +50,30 @@ def build(args):
         shutil.copyfile(dex/'bootstrap.dex',stage/'bootstrap.dex')
         native=[]
         with zipfile.ZipFile(runtime) as bridge,zipfile.ZipFile(args.matrix) as vendor,zipfile.ZipFile(stage/'matrix-runtime-template.zip','w',compression=zipfile.ZIP_DEFLATED,compresslevel=6) as output:
+            def write(name,data):
+                item=zipfile.ZipInfo(name,date_time=(1980,1,1,0,0,0))
+                item.compress_type=zipfile.ZIP_DEFLATED
+                output.writestr(item,data,compress_type=zipfile.ZIP_DEFLATED,compresslevel=6)
             diagnostic='lib/arm64-v8a/libmatrixdiag.so'
             if diagnostic in bridge.namelist() and not args.research_diagnostics:raise ValueError('Release runtime contains research diagnostics')
             names=sorted((n for n in bridge.namelist() if re.fullmatch(r'classes\d*\.dex',n)),key=lambda n:1 if n=='classes.dex' else int(n[7:-4]))
-            for i,name in enumerate(names,1):output.writestr('classes.dex' if i==1 else f'classes{i}.dex',bridge.read(name))
-            for i,name in enumerate(dex_evidence['vendorDex'],len(names)+1):output.writestr(f'classes{i}.dex',(dex/name).read_bytes())
+            for i,name in enumerate(names,1):write('classes.dex' if i==1 else f'classes{i}.dex',bridge.read(name))
+            for i,name in enumerate(dex_evidence['vendorDex'],len(names)+1):write(f'classes{i}.dex',(dex/name).read_bytes())
             libraries={'libplatformsdk.so','libvolcenginertc.so'}
             system={'liblog.so','libm.so','libdl.so','libc.so','libOpenSLES.so','libEGL.so','libGLESv1_CM.so','libGLESv2.so','libandroid.so'}
             for name in sorted(libraries):
                 entry='lib/arm64-v8a/'+name;data=vendor.read(entry)
                 elf=ELFFile(io.BytesIO(data));needed={t.needed for t in elf.get_section_by_name('.dynamic').iter_tags() if t.entry.d_tag=='DT_NEEDED'}
                 if not needed<=system|libraries:raise ValueError('Unknown Matrix native dependency: '+name)
-                output.writestr(entry,data);native.append({'entry':entry,'sha256':hashlib.sha256(data).hexdigest(),'replacements':data.count(b'com.bytedance.pico.matrix\0'),'needed':sorted(needed)})
+                write(entry,data);native.append({'entry':entry,'sha256':hashlib.sha256(data).hexdigest(),'replacements':data.count(b'com.bytedance.pico.matrix\0'),'needed':sorted(needed)})
             if args.research_diagnostics and diagnostic in bridge.namelist():
-                data=bridge.read(diagnostic);output.writestr(diagnostic,data);native.append({'entry':diagnostic,'sha256':hashlib.sha256(data).hexdigest(),'replacements':0,'researchDiagnostic':True})
-        (stage/'vd-recipe.json').write_text(json.dumps(recipe,indent=2)+'\n')
+                data=bridge.read(diagnostic);write(diagnostic,data);native.append({'entry':diagnostic,'sha256':hashlib.sha256(data).hexdigest(),'replacements':0,'researchDiagnostic':True})
         shutil.copyfile(matrix_profile,stage/'matrix-runtime-profile.json')
         shutil.rmtree(dex)
-        manifest={'schema':1,'recipe':'vd-recipe.json','runtime':'matrix-runtime-template.zip','bootstrap':'bootstrap.dex','matrixProfile':'matrix-runtime-profile.json',
+        manifest={'schema':1,'runtime':'matrix-runtime-template.zip','bootstrap':'bootstrap.dex','matrixProfile':'matrix-runtime-profile.json',
                   'variant':variant,'researchDiagnostics':args.research_diagnostics,'native':native,'bootstrapClasses':dex_evidence['bootstrapClasses'],
-                  'generic':{'libraries':profile['libraries'],'appIdMetadataNames':['app_id','pico_app_id','PICO_APP_ID'],'account':recipe['profile']['account']},
-                  'profiles':[{key:recipe['profile'][key] for key in ['id','package','versionCode','appVersion','inputSha256']}],
-                  'sources':{'matrixSha256':sha(args.matrix),'clientSha256':profile['inputSha256'],'runtimeSha256':sha(runtime),'bootstrapSha256':sha(bootstrap)},
+                  'generic':{key:generic[key] for key in ['libraries','appIdMetadataNames','account']},
+                  'sources':{'matrixSha256':sha(args.matrix),'runtimeSha256':sha(runtime),'bootstrapSha256':sha(bootstrap)},
                   'files':{p.name:{'sha256':sha(p),'bytes':p.stat().st_size} for p in sorted(stage.iterdir()) if p.is_file()}}
         (stage/'bundle.json').write_text(json.dumps(manifest,indent=2)+'\n')
         stage.rename(out)

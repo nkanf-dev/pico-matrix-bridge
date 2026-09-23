@@ -38,12 +38,12 @@ public class PreparationTest {
             JSONObject files=new JSONObject();for(String name:new String[]{"runtime.zip","bootstrap.dex","matrix.json","recipe.json"})files.put(name,new JSONObject().put("bytes",Files.size(bundle.resolve(name))).put("sha256",Portable.sha(bundle.resolve(name))));
             Portable.json(bundle.resolve("bundle.json"),new JSONObject().put("schema",1).put("recipe","recipe.json").put("runtime","runtime.zip").put("bootstrap","bootstrap.dex").put("matrixProfile","matrix.json").put("files",files).put("native",new JSONArray())
                 .put("generic",new JSONObject().put("libraries",new JSONObject().put(library,new JSONObject().put("sha256",Portable.sha(loader)).put("replacements",1))).put("appIdMetadataNames",new JSONArray().put("app_id")).put("account",new JSONObject().put("agwKey","protocol-fixture"))));
-            assertEquals(AdapterEngine.Route.GENERIC,AdapterEngine.inspect(input,bundle).route);
+            assertEquals(AdapterEngine.Route.GENERIC,AdapterEngine.inspect(input,bundle,null).route);
             byte[] cert;try(InputStream in=getClass().getResourceAsStream("/portable-test-certificate.pem")){cert=CertificateFactory.getInstance("X.509").generateCertificate(in).getEncoded();}
             String hostSigner=String.join("",Collections.nCopies(64,"1"));Path output=dir.resolve("adapted.apk");
-            var result=AdapterEngine.prepare(input,bundle,output,cert,"host.package",hostSigner);
+            var result=AdapterEngine.prepare(input,bundle,output,cert,"host.package",hostSigner,null);
             assertTrue(result.requiresSigning);assertEquals("generic_app_123",result.appId);assertEquals(originalHash,Portable.sha(input));assertEquals(Portable.sha(output),result.outputSha256);
-            assertNotEquals("example.nativeapp",result.packageName);assertEquals(AdapterEngine.targetPackage(bundle,"example.nativeapp"),result.packageName);assertEquals(Portable.sha(cert),result.targetSignerSha256);
+            assertNotEquals("example.nativeapp",result.packageName);assertEquals(AdapterEngine.targetPackage(null,"example.nativeapp"),result.packageName);assertEquals(Portable.sha(cert),result.targetSignerSha256);
             try(ZipFile apk=new ZipFile(output.toFile())) {
                 JSONObject config=new JSONObject(new String(AdapterEngine.entry(apk,"assets/matrix-embedded.json",10000),StandardCharsets.UTF_8));
                 assertEquals("example.nativeapp",config.getString("originalPackage"));assertEquals(hostSigner,config.getString("provisionerSignerSha256"));assertEquals(Portable.sha(cert),config.getString("targetSignerSha256"));
@@ -51,7 +51,7 @@ public class PreparationTest {
                 assertNotNull(apk.getEntry("classes2.dex"));
             }
             try(var apk=com.reandroid.apk.ApkModule.loadApkFile(output.toFile())) {assertEquals("Original label",apk.getAndroidManifestBlock().getApplicationLabelString());assertNotNull(apk.getAndroidManifestBlock().getUsesPermission("android.permission.INTERNET"));}
-            assertThrows(IllegalArgumentException.class,()->AdapterEngine.prepare(input,bundle,output,cert,"host.package",hostSigner));
+            assertThrows(IllegalArgumentException.class,()->AdapterEngine.prepare(input,bundle,output,cert,"host.package",hostSigner,null));
         } finally {Portable.deleteTree(dir);}
     }
 }

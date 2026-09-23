@@ -27,13 +27,13 @@ python3 scripts/matrix.py check-generated
 
 ## 3. 更新应用规则
 
-VD profile 固定原始 APK、程序集、方法、字符串和原生指令的身份。`compile_vd_profile.py` 根据原始元数据定位，生成包含原始字节校验的 recipe；`adapter-core` 在 Android/JVM 上执行 recipe，并使用本次实际目标签名证书计算替换值。比较指令、分支和无关程序集保持不变。
+VD profile 固定原始 APK、程序集、方法、字符串和原生指令的身份。`compile_vd_profile.py` 根据原始元数据定位，生成包含原始字节校验的 recipe；`profile-vd-code` 执行完整 VD 适配，`adapter-core` 只提供通用检查、runtime 嵌入与 APK 写入。profile APK 同时装入 VD 代码和 recipe，使用本次实际目标签名证书计算替换值。比较指令、分支和无关程序集保持不变。
 
 客户端更新时，先静态定位变化，再调整 profile 并执行差分回归。Lab 可让用户对已知应用的新版本显式尝试现有 profile；整包哈希与版本差异本身不阻止尝试，但目标程序集、AOT 镜像、原生库和补丁操作数仍必须与 recipe 匹配。不匹配会在安装前失败，并保留原始下载及现有应用；已知应用不会自动切换到通用适配。通用路径独立处理已识别的 native Matrix 接入，要求明确的应用标识、入口和 loader 身份。
 
 ## 4. 构建与检查
 
-按 [开发说明](development.md) 生成 bundle 并构建 Lab。bundle 清单记录各文件哈希、输入 APK 身份和 runtime/bootstrap 版本；release 构建默认不带诊断探针。所有输出先写入同级工作目录，完成后原子落盘。
+按 [开发说明](development.md) 分别生成通用 runtime bundle 和签名 profile APK，再构建 Lab。bundle 清单记录 runtime/bootstrap 身份，不再包含 VD recipe；profile 单独记录原始 APK 身份。release 构建默认不带诊断探针。新 profile 构建使用更新的 UTC 秒，在 Bridge 仓库创建 `vd-profile-YYYYMMDDTHHMMSSZ` release 并附上 `matrix-profile-vd.apk`；Lab 下载后校验哈希与 Lab 同签名再切换，失败保留已验证版本。
 
 ```sh
 ./scripts/verify.sh

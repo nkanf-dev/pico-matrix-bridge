@@ -30,8 +30,10 @@ public final class Main {
         } finally { Files.deleteIfExists(staging); }
     }
     public static void main(String[] args) throws Exception {
-        if(args.length==7 && args[0].equals("prepare-portable")) {
-            AdapterEngine.Result result=AdapterEngine.prepare(Path.of(args[1]),Path.of(args[2]),Path.of(args[3]),Files.readAllBytes(Path.of(args[4])),args[5],args[6]);
+        if((args.length==7||args.length==8) && args[0].equals("prepare-portable")) {
+            Path recipe=args.length==8?Path.of(args[7]):Path.of(args[2],"vd-recipe.json");
+            ApplicationProfile profile=Files.isRegularFile(recipe)?new VdProfile(new JSONObject(Files.readString(recipe))):null;
+            AdapterEngine.Result result=AdapterEngine.prepare(Path.of(args[1]),Path.of(args[2]),Path.of(args[3]),Files.readAllBytes(Path.of(args[4])),args[5],args[6],profile);
             JSONObject json=new JSONObject().put("output",result.output.toString()).put("requiresSigning",result.requiresSigning).put("inputSha256",result.inputSha256)
                 .put("outputSha256",result.outputSha256).put("profileId",result.profileId).put("appId",result.appId).put("package",result.packageName).put("targetSignerSha256",result.targetSignerSha256);
             Files.writeString(Path.of(args[3]+".json"),json.toString(2)+"\n");System.out.println(json);return;

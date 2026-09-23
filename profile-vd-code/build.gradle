@@ -1,0 +1,12 @@
+plugins { id 'java-library' }
+group = 'org.picomatrix.bridge'
+java { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
+dependencies {
+    compileOnly project(':adapter-core')
+    compileOnly 'org.lz4:lz4-java:1.8.0'
+    compileOnly 'org.json:json:20240303'
+    testImplementation project(':adapter-core')
+    testImplementation 'org.lz4:lz4-java:1.8.0'
+    testImplementation 'org.json:json:20240303'
+    testImplementation 'junit:junit:4.13.2'
+}

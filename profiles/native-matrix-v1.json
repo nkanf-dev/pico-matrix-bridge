@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "libraries": {
+    "lib/arm64-v8a/libpxrplatformloader.so": {
+      "sha256": "2881fc7db866b8427c487a48a529c98da1ec764ff5b830650d280ffbfcf05c9b",
+      "replacements": 1
+    }
+  },
+  "appIdMetadataNames": ["app_id", "pico_app_id", "PICO_APP_ID"],
+  "account": {
+    "agwKey": "N6HCMSN3Gy45UEZNBo72hxiEnk5BMvKM"
+  }
+}

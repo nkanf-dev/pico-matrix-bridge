@@ -1,0 +1,66 @@
+plugins { id 'com.android.application' }
+group = 'org.picomatrix.bridge'
+
+def releaseSigning = [
+    storeFile: providers.environmentVariable('PICO_ANDROID_KEYSTORE').orNull,
+    keyAlias: providers.environmentVariable('PICO_ANDROID_KEY_ALIAS').orNull,
+    storePassword: providers.environmentVariable('PICO_ANDROID_STORE_PASSWORD').orNull,
+    keyPassword: providers.environmentVariable('PICO_ANDROID_KEY_PASSWORD').orNull,
+]
+if (releaseSigning.values().any { it } && !releaseSigning.values().every { it })
+    throw new GradleException('Provide all four PICO_ANDROID signing environment variables')
+
+def defaultBuiltAt = java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS)
+
+android {
+    namespace 'org.picomatrix.bridge.profile.vd'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'org.picomatrix.bridge.profile.vd'
+        minSdk 29
+        targetSdk 35
+        versionCode providers.gradleProperty('vdProfileVersionCode').map { it.toInteger() }.orElse((int)defaultBuiltAt.epochSecond).get()
+        versionName providers.gradleProperty('vdProfileVersionName').orElse(defaultBuiltAt.toString()).get()
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+        coreLibraryDesugaringEnabled true
+    }
+    if (releaseSigning.values().every { it }) {
+        signingConfigs {
+            release {
+                storeFile file(releaseSigning.storeFile)
+                keyAlias releaseSigning.keyAlias
+                storePassword releaseSigning.storePassword
+                keyPassword releaseSigning.keyPassword
+            }
+        }
+        buildTypes.release.signingConfig signingConfigs.release
+    }
+}
+
+def recipe = providers.gradleProperty('vdRecipeFile')
+tasks.register('copyVdRecipe', Copy) {
+    from providers.provider {
+        if (!recipe.isPresent() || !file(recipe.get()).isFile())
+            throw new GradleException('Provide -PvdRecipeFile with a compiled VD recipe')
+        file(recipe.get())
+    }
+    rename { 'profile.json' }
+    into "$buildDir/generated/profile-assets"
+}
+android.sourceSets.main.assets.srcDir "$buildDir/generated/profile-assets"
+tasks.named('preBuild').configure { dependsOn 'copyVdRecipe' }
+
+dependencies {
+    implementation project(':profile-vd-code')
+    compileOnly project(':adapter-core')
+    compileOnly 'org.smali:dexlib2:2.5.2'
+    compileOnly 'io.github.reandroid:ARSCLib:1.4.0'
+    compileOnly 'org.lz4:lz4-java:1.8.0'
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'
+    testImplementation project(':adapter-core')
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20240303'
+}

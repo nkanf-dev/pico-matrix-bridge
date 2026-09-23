@@ -39,15 +39,4 @@ public class IntegrityRecipeTest {
         assertEquals(ByteBuffer.wrap(java.security.MessageDigest.getInstance("SHA-1").digest(cert)).getInt(),IntegrityRecipe.signerHash(cert,"x509"));
         assertThrows(IllegalArgumentException.class,()->IntegrityRecipe.signerHash(cert,"unknown"));
     }
-    private JSONObject report(String pkg,boolean managed,boolean matrix) {
-        return new JSONObject().put("manifest",new JSONObject().put("package",pkg)).put("source",new JSONObject().put("sha256","source"))
-            .put("matrix",new JSONObject().put("detected",matrix)).put("managedRuntime",new JSONObject().put("requiresManagedCodeReview",managed));
-    }
-    @Test public void ordinaryApplicationsPassThroughButKnownAndUnknownManagedApplicationsFailClosed() throws Exception {
-        assertEquals(AdapterEngine.Route.PASSTHROUGH,AdapterEngine.select(report("ordinary.app",false,false),null).route);
-        assertEquals(AdapterEngine.Route.PASSTHROUGH,AdapterEngine.select(report("ordinary.unity",true,false),null).route);
-        assertEquals(AdapterEngine.Route.ANALYSIS_REQUIRED,AdapterEngine.select(report("VirtualDesktop.Android",false,false),null).route);
-        assertEquals(AdapterEngine.Route.ANALYSIS_REQUIRED,AdapterEngine.select(report("unknown.managed",true,true),null).route);
-        assertEquals(AdapterEngine.Route.ANALYSIS_REQUIRED,AdapterEngine.select(report("unknown.matrix",false,true),null).route);
-    }
 }

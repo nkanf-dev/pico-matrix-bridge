@@ -10,6 +10,7 @@ import java.util.zip.ZipFile;
 import org.json.JSONObject;
 import org.picomatrix.bridge.account.GrantProvisioner;
 import org.picomatrix.bridge.adapter.AdapterEngine;
+import org.picomatrix.bridge.adapter.ApplicationProfile;
 import java.io.*;
 import java.security.KeyStore;
 import java.util.*;
@@ -34,11 +35,11 @@ public final class MatrixInstaller {
     private InstallationStatus progress(String id,String stage,String pkg,String code) {
         InstallationStatus status=new InstallationStatus(id,stage,pkg,code);emit(status);return status;
     }
-    public InstallationStatus prepareAndInstall(File original,File bundle) throws Exception {
-        return prepareAndInstallInternal(original,bundle,null);
+    public InstallationStatus prepareAndInstall(File original,File bundle,ApplicationProfile profile) throws Exception {
+        return prepareAndInstallInternal(original,bundle,null,profile);
     }
-    public InstallationStatus prepareAndInstall(File original,File bundle,Mode mode) throws Exception {
-        return prepareAndInstallInternal(original,bundle,Objects.requireNonNull(mode,"mode"));
+    public InstallationStatus prepareAndInstall(File original,File bundle,Mode mode,ApplicationProfile profile) throws Exception {
+        return prepareAndInstallInternal(original,bundle,Objects.requireNonNull(mode,"mode"),profile);
     }
     static boolean shouldAdapt(Mode mode,AdapterEngine.Route route) throws IOException {
         if(mode==Mode.ORIGINAL)return false;
@@ -52,7 +53,7 @@ public final class MatrixInstaller {
         return !"original".equals(record.optString("mode")) && !"update".equals(record.optString("operation"))
             && record.optLong("previousUpdate",0)==0 && !record.optString("appId").isEmpty();
     }
-    private InstallationStatus prepareAndInstallInternal(File original,File bundle,Mode mode) throws Exception {
+    private InstallationStatus prepareAndInstallInternal(File original,File bundle,Mode mode,ApplicationProfile profile) throws Exception {
         if(!PREPARING.compareAndSet(false,true)) throw new IllegalStateException("installation_busy");
         String id=UUID.randomUUID().toString();File work=null;
         try {
@@ -64,11 +65,11 @@ public final class MatrixInstaller {
             if(!originalHash.equals(LocalSigner.hash(original))) throw new SecurityException("preparation_changed");
             AdapterEngine.Inspection inspection=null;
             if(mode!=Mode.ORIGINAL) {
-                inspection=AdapterEngine.inspect(original.toPath(),bundle.toPath());
+                inspection=AdapterEngine.inspect(original.toPath(),bundle.toPath(),profile);
                 if(!originalHash.equals(inspection.inputSha256)) throw new SecurityException("preparation_changed");
             }
             boolean adapted=shouldAdapt(mode,inspection==null?null:inspection.route);
-            File candidate=original;String appId="",profile="",signer=originalSigner;
+            File candidate=original;String appId="",profileId="",signer=originalSigner;
             if(adapted) {
                 progress(id,"preparing",inspection.packageName,"preparing_application");
                 if(new StatFs(context.getCacheDir().getPath()).getAvailableBytes()<original.length()*2+256L*1024*1024)
@@ -78,7 +79,7 @@ public final class MatrixInstaller {
                 KeyStore.PrivateKeyEntry key=LocalSigner.identity();
                 File unsigned=new File(work,"unsigned.apk"),signed=new File(work,"prepared.apk");
                 AdapterEngine.Result prepared=AdapterEngine.prepare(original.toPath(),bundle.toPath(),unsigned.toPath(),
-                    key.getCertificate().getEncoded(),context.getPackageName(),LocalSigner.installedSigner(context,context.getPackageName()));
+                    key.getCertificate().getEncoded(),context.getPackageName(),LocalSigner.installedSigner(context,context.getPackageName()),profile);
                 if(!originalHash.equals(prepared.inputSha256)) throw new SecurityException("preparation_changed");
                 if(!prepared.requiresSigning || !prepared.output.toFile().getCanonicalFile().equals(unsigned.getCanonicalFile()))
                     throw new SecurityException("preparation_contract_failed");
@@ -87,7 +88,7 @@ public final class MatrixInstaller {
                 LocalSigner.sign(unsigned,signed,key);unsigned.delete();
                 signer=LocalSigner.hash(key.getCertificate().getEncoded());
                 if(!signer.equals(prepared.targetSignerSha256)) throw new SecurityException("preparation_signer_mismatch");
-                candidate=signed;appId=prepared.appId;profile=prepared.profileId;
+                candidate=signed;appId=prepared.appId;profileId=prepared.profileId;
             }
             PackageInfo info=context.getPackageManager().getPackageArchiveInfo(candidate.getPath(),0);
             if(info==null) throw new IOException("invalid_application");
@@ -97,7 +98,7 @@ public final class MatrixInstaller {
                 previousUpdate=installed.lastUpdateTime;
                 if(!signer.equals(LocalSigner.installedSigner(context,info.packageName)))
                     throw new SecurityException("existing_signature_conflict");
-                if("generic-native-matrix-v1".equals(profile) && !sameGenericOrigin(
+                if("generic-native-matrix-v1".equals(profileId) && !sameGenericOrigin(
                         embeddedConfig(new File(installed.applicationInfo.sourceDir)),inspection.packageName,appId))
                     throw new SecurityException("existing_signature_conflict");
                 if(installed.getLongVersionCode()>info.getLongVersionCode()) throw new SecurityException("application_downgrade");
@@ -109,7 +110,7 @@ public final class MatrixInstaller {
                 throw new SecurityException("preparation_changed");
             JSONObject record=new JSONObject().put("id",id).put("package",info.packageName).put("version",info.getLongVersionCode())
                 .put("signerSha256",signer).put("apkSha256",candidateHash).put("appId",appId==null?"":appId)
-                .put("profile",profile==null?"":profile).put("mode",adapted?"adapted":"original").put("operation",updating?"update":"install").put("previousUpdate",previousUpdate)
+                .put("profile",profileId==null?"":profileId).put("mode",adapted?"adapted":"original").put("operation",updating?"update":"install").put("previousUpdate",previousUpdate)
                 .put("createdAt",System.currentTimeMillis()).put("stage","preparing").put("code","preparing_installation");
             PackageInstaller installer=context.getPackageManager().getPackageInstaller();
             PackageInstaller.SessionParams params=new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
