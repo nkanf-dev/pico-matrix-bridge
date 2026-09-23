@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: profile-publishing
     concurrency:
-      group: profile-publishing
+      group: profile-publishing-${{ inputs.profile }}
       cancel-in-progress: false
     permissions:
       contents: write
