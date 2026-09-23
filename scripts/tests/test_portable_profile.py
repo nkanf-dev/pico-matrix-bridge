@@ -19,13 +19,13 @@ class PortableProfileRegression(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         import sys
-        sys.path.insert(0,str(ROOT/'scripts'))
-        import adapt_vd
-        from compile_vd_profile import compile_recipe
-        cls.source=adapt_vd
+        sys.path.insert(0,str(ROOT/'profiles/vd/scripts'))
+        import reference
+        from compile import compile_recipe
+        cls.source=reference
         cls.apk=Path(os.environ['MATRIX_VD_APK']);cls.certificate=Path(os.environ['MATRIX_TEST_CERT']).read_bytes()
         cls.work=Path(os.environ['MATRIX_PORTABLE_RESEARCH']);cls.work.mkdir(parents=True,exist_ok=True)
-        cls.profile=json.loads((ROOT/'profiles/clients/vd-1.34.22.0-research.json').read_text())
+        cls.profile=json.loads((ROOT/'profiles/vd/client-1.34.22.0-research.json').read_text())
         cls.recipe=compile_recipe(cls.apk,cls.profile)
         cls.recipe_path=cls.work/'vd-recipe.json';cls.recipe_path.write_text(json.dumps(cls.recipe,indent=2)+'\n')
         subprocess.run([str(ROOT/'tools/build/install/tools/bin/tools'),'apply-vd-recipe',str(cls.apk),str(cls.recipe_path),os.environ['MATRIX_TEST_CERT'],str(cls.work/'java')],check=True)

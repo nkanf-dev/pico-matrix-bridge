@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 
 ROOT=Path(__file__).resolve().parents[1]
-MANIFESTS=ROOT/'profiles/manifests'
+MANIFESTS=ROOT/'profiles'
 KEY=re.compile(r'[a-z][a-z0-9_]{0,63}')
 PACKAGE=re.compile(r'[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+')
 
@@ -13,9 +13,9 @@ PACKAGE=re.compile(r'[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+')
 def validate(directory=MANIFESTS):
     profiles={}
     routes={}
-    for path in sorted(Path(directory).glob('*.json')):
+    for path in sorted(Path(directory).glob('*/manifest.json')):
         profile=json.loads(path.read_text())
-        key=path.stem
+        key=path.parent.name
         if not KEY.fullmatch(key) or profile.get('schema')!=1 or profile.get('profileKey')!=key:
             raise ValueError(f'Invalid profile identity: {path}')
         matcher=profile.get('packageMatcher')

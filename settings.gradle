@@ -1,8 +1,11 @@
 pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
 dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
 rootProject.name = 'pico-matrix-bridge'
-include ':tools', ':runtime', ':probe', ':protocol', ':installer-core'
+include ':tools', ':runtime', ':protocol', ':installer-core'
 include ':embedded-bootstrap'
 include ':adapter-core', ':account-android', ':installer-android'
-include ':profile-vd', ':profile-vd-code'
-include ':profile-generic', ':profile-generic-code'
+file('profiles').listFiles().findAll { new File(it, 'manifest.json').isFile() }.sort { it.name }.each { dir ->
+    include ":profile-${dir.name}", ":profile-${dir.name}-code"
+    project(":profile-${dir.name}").projectDir = file("profiles/${dir.name}/apk")
+    project(":profile-${dir.name}-code").projectDir = file("profiles/${dir.name}/code")
+}

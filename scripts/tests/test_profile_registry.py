@@ -13,11 +13,12 @@ class ProfileRegistryTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
             for key,matcher,priority in [('generic','*',0),('vd','VirtualDesktop.Android',100)]:
-                (root/f'{key}.json').write_text(json.dumps({'schema':1,'profileKey':key,
+                (root/key).mkdir()
+                (root/key/'manifest.json').write_text(json.dumps({'schema':1,'profileKey':key,
                     'packageMatcher':matcher,'priority':priority}))
             self.assertEqual({'generic','vd'},set(validate(root)))
-            (root/'other.json').write_text(json.dumps({'schema':1,'profileKey':'other',
+            (root/'other').mkdir()
+            (root/'other/manifest.json').write_text(json.dumps({'schema':1,'profileKey':'other',
                 'packageMatcher':'VirtualDesktop.Android','priority':100}))
             with self.assertRaisesRegex(ValueError,'Ambiguous profile match rule'):
                 validate(root)
-

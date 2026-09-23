@@ -9,8 +9,8 @@ verifies/signs the prepared copy and owns Android PackageInstaller.
 Each `ApplicationProfile` supplies its package matcher, priority, version
 metadata, input checks, replacement entries and output checks. The core selects
 from a list and passes one implementation to the shared APK writer.
-`profile-vd-code` owns the Virtual Desktop managed-store, loader and AOT
-adaptation; `profile-generic-code` owns the checked native Matrix path. No
+`profiles/vd/code` owns the Virtual Desktop managed-store, loader and AOT
+adaptation; `profiles/generic/code` owns the checked native Matrix path. No
 application package name, assembly, offset or recipe is compiled into
 `adapter-core`.
 
@@ -30,11 +30,11 @@ managed Matrix dependencies and unresolved DEX routing require analysis.
 
 Each implementation is packaged as an APK containing DEX plus
 `assets/profile.json`. The APK is **not installed**. `ProfileStore` verifies its
-APK signature against the installed Lab signer, APK package, API version,
+APK signature against the pinned profile publisher certificate, APK package, API version,
 metadata and monotonic profile version, then loads its classes from a private
 read-only file. Its active pointer changes atomically; a failed update retains
 the previous verified profile. Profile code runs with Lab permissions, so only
-an authorized Lab signing key may sign a release profile.
+the profile publisher key is kept separate from the Lab signing key.
 
 The runtime bundle is built separately and does not contain a VD recipe:
 
@@ -42,9 +42,9 @@ The runtime bundle is built separately and does not contain a VD recipe:
 ./gradlew :tools:installDist :runtime:assembleRelease :embedded-bootstrap:assembleRelease
 uv run scripts/build_bundle.py --matrix /absolute/path/matrix.apk \
   --client /absolute/path/verified-client.apk --output /absolute/analysis/runtime-bundle
-uv run scripts/build_vd_profile.py --client /absolute/path/virtual-desktop.apk \
+uv run profiles/vd/scripts/build.py --client /absolute/path/virtual-desktop.apk \
   --output /absolute/analysis/profile-vd
-python3 scripts/build_generic_profile.py --output /absolute/analysis/profile-generic
+python3 scripts/build_profile.py --key generic --output /absolute/analysis/profile-generic
 mkdir -p /absolute/analysis/profiles
 cp /absolute/analysis/profile-{vd,generic}/matrix-profile-*.apk /absolute/analysis/profiles/
 python3 scripts/build_lab.py --lab /absolute/path/pico-store \
@@ -53,10 +53,10 @@ python3 scripts/build_lab.py --lab /absolute/path/pico-store \
 ```
 
 The client input to `build_bundle.py` checks bootstrap DEX collisions but is
-not packaged or listed as a runtime dependency. `build_vd_profile.py` compiles
-its checked recipe and builds the signed profile. Debug builds use the same
-standard Android debug key as Lab. Release builds require the four
-`PICO_ANDROID_*` signing variables used for the Lab release. The build time in
+not packaged or listed as a runtime dependency. The VD profile build script compiles
+its checked recipe and builds the signed profile. Debug builds use the
+standard Android debug key. Release builds require the four
+`PICO_PROFILE_*` signing variables. The build time in
 UTC sets APK versionCode, versionName and profile metadata together; pass
 `--built-at YYYY-MM-DDTHH:MM:SSZ` to reproduce a build. Keep original APKs and
 outputs in durable research storage outside Git.

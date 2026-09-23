@@ -14,7 +14,7 @@ def sha(path):
     with Path(path).open('rb') as stream:return hashlib.file_digest(stream,'sha256').hexdigest()
 
 def prepare(source, vendor, work, profile, certificate, provisioner):
-    matrix_profile=ROOT/'profiles/matrix-global-6.3.4.json'
+    matrix_profile=ROOT/'protocol/baselines/matrix-global-6.3.4.json'
     matrix=json.loads(matrix_profile.read_text())
     if sha(vendor)!=matrix['source']['sha256']:raise ValueError('Unknown Matrix payload source')
     runtime=ROOT/'runtime/build/outputs/apk/debug/runtime-debug.apk'

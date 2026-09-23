@@ -1,6 +1,6 @@
 # 维护应用与协议支持
 
-应用适配规则与协议基线分别放在 `profiles/clients/` 和 `profiles/`。每个 profile 在 `profiles/manifests/<key>.json` 声明匹配规则与优先级。更新应用时维护对应 profile；Matrix 协议变化时重新提取基线。两条路径共用检测、构建和安装组件。
+每个应用 profile 的清单、recipe、代码和 APK 构建配置放在 `profiles/<key>/`；协议基线放在 `protocol/baselines/`。`manifest.json` 声明匹配规则与优先级。更新应用时维护对应 profile；Matrix 协议变化时重新提取基线。两条路径共用检测、构建和安装组件。
 
 ## 1. 取得并检查输入
 
@@ -9,7 +9,7 @@
 ```sh
 python3 scripts/matrix.py inspect /absolute/work/artifacts/client.apk --output /absolute/work/analysis/client-inspection.json
 python3 scripts/matrix.py profile /absolute/work/artifacts/matrix.apk --output /absolute/work/analysis/matrix-profile.json
-python3 scripts/matrix.py compare profiles/matrix-global-6.3.4.json /absolute/work/analysis/matrix-profile.json --output /absolute/work/analysis/profile-diff.json
+python3 scripts/matrix.py compare protocol/baselines/matrix-global-6.3.4.json /absolute/work/analysis/matrix-profile.json --output /absolute/work/analysis/profile-diff.json
 ```
 
 提取器直接读取 DEX 的 WireField、命令常量和枚举，同时记录 Manifest、SDK 入口和原生库哈希。重复字段、矛盾命令、重复 ZIP 项、解析失败或处理中的输入变化会终止任务。
@@ -19,7 +19,7 @@ python3 scripts/matrix.py compare profiles/matrix-global-6.3.4.json /absolute/wo
 先比较字段编号、类型、重复字段、命令、驱动和原生依赖。更新基线后重新生成协议常量：
 
 ```sh
-python3 scripts/contracts.py extract /absolute/work/analysis/matrix-inspection.json profiles/matrix-global-6.3.4.json --java protocol/src/main/java/org/picomatrix/bridge/protocol/MatrixContract.java
+python3 scripts/contracts.py extract /absolute/work/analysis/matrix-inspection.json protocol/baselines/matrix-global-6.3.4.json --java protocol/src/main/java/org/picomatrix/bridge/protocol/MatrixContract.java
 python3 scripts/matrix.py check-generated
 ```
 
@@ -27,7 +27,7 @@ python3 scripts/matrix.py check-generated
 
 ## 3. 更新应用规则
 
-VD profile 固定原始 APK、程序集、方法、字符串和原生指令的身份。`compile_vd_profile.py` 根据原始元数据定位，生成包含原始字节校验的 recipe；`profile-vd-code` 执行完整 VD 适配，`adapter-core` 只提供通用检查、runtime 嵌入与 APK 写入。profile APK 同时装入 VD 代码和 recipe，使用本次实际目标签名证书计算替换值。比较指令、分支和无关程序集保持不变。
+VD profile 固定原始 APK、程序集、方法、字符串和原生指令的身份。`profiles/vd/scripts/compile.py` 根据原始元数据定位，生成包含原始字节校验的 recipe；`profiles/vd/code` 执行完整 VD 适配，`adapter-core` 只提供通用检查、runtime 嵌入与 APK 写入。profile APK 同时装入 VD 代码和 recipe，使用本次实际目标签名证书计算替换值。比较指令、分支和无关程序集保持不变。
 
 客户端更新时，先静态定位变化，再调整 profile 并执行差分回归。Lab 可让用户对已知应用的新版本显式尝试现有 profile；整包哈希与版本差异本身不阻止尝试，但目标程序集、AOT 镜像、原生库和补丁操作数仍必须与 recipe 匹配。不匹配会在安装前失败，并保留原始下载及现有应用。通用 native Matrix 适配也由独立的 `generic` profile 提供，要求明确的应用标识、入口和 loader 身份。profile 按优先级、包名匹配精度、精确版本依次选择；`*` 通用 profile 的优先级最低。Lab 集成构建会拒绝两个 profile 使用相同的包名匹配规则和优先级。
 

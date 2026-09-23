@@ -17,11 +17,11 @@ class IntegrityRegression(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         global adapter
-        spec = importlib.util.spec_from_file_location('adapt_vd', ROOT/'scripts/adapt_vd.py')
+        spec = importlib.util.spec_from_file_location('vd_reference', ROOT/'profiles/vd/scripts/reference.py')
         adapter = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(adapter)
         cls.research = Path(os.environ['VD_RESEARCH_ROOT'])
-        cls.profile = json.loads((ROOT/'profiles/clients/vd-1.34.22.0-research.json').read_text())
+        cls.profile = json.loads((ROOT/'profiles/vd/client-1.34.22.0-research.json').read_text())
         cls.rule = cls.profile['managedLoaderIntegrity']
         cls.image = (cls.research/'managed'/cls.rule['assembly']).read_bytes()
         import zipfile

@@ -17,8 +17,8 @@
 ```sh
 ./gradlew :tools:installDist :runtime:assembleRelease :embedded-bootstrap:assembleRelease
 uv run scripts/build_bundle.py --matrix /absolute/research/artifacts/pico-global-matrix-6.3.4.apk --client /absolute/research/artifacts/virtual-desktop-pico-1.34.22.0.apk --output /absolute/research/analysis/build-001/compatibility-bundle
-uv run scripts/build_vd_profile.py --client /absolute/research/artifacts/virtual-desktop-pico-1.34.22.0.apk --output /absolute/research/analysis/build-001/profile-vd
-python3 scripts/build_generic_profile.py --output /absolute/research/analysis/build-001/profile-generic
+uv run profiles/vd/scripts/build.py --client /absolute/research/artifacts/virtual-desktop-pico-1.34.22.0.apk --output /absolute/research/analysis/build-001/profile-vd
+python3 scripts/build_profile.py --key generic --output /absolute/research/analysis/build-001/profile-generic
 mkdir -p /absolute/research/analysis/build-001/profiles
 cp /absolute/research/analysis/build-001/profile-{vd,generic}/matrix-profile-*.apk /absolute/research/analysis/build-001/profiles/
 python3 scripts/build_lab.py --lab /absolute/source/pico-store --bundle /absolute/research/analysis/build-001/compatibility-bundle --profiles-dir /absolute/research/analysis/build-001/profiles

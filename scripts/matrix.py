@@ -27,7 +27,7 @@ def main():
     sub.add_parser('check-generated')
     a=p.parse_args()
     if a.command=='check-generated':
-        baseline=json.loads((ROOT/'profiles/matrix-global-6.3.4.json').read_text())
+        baseline=json.loads((ROOT/'protocol/baselines/matrix-global-6.3.4.json').read_text())
         expected=generate_java(baseline)
         actual=(ROOT/'protocol/src/main/java/org/picomatrix/bridge/protocol/MatrixContract.java').read_text()
         if expected!=actual: raise ValueError('generated constants differ from extracted baseline')

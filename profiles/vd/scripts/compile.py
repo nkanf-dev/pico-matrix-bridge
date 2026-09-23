@@ -16,7 +16,7 @@ from dncil.cil.body.reader import CilMethodBodyReaderBytes
 from dncil.clr.token import StringToken
 from elftools.elf.elffile import ELFFile
 import lz4.block
-import adapt_vd as source
+import reference as source
 
 
 def method(pe, rule):
@@ -111,7 +111,7 @@ def compile_recipe(apk, profile):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('input',type=Path);p.add_argument('--output',required=True,type=Path)
-    p.add_argument('--profile',type=Path,default=source.ROOT/'profiles/clients/vd-1.34.22.0-research.json');a=p.parse_args()
+    p.add_argument('--profile',type=Path,default=source.ROOT/'profiles/vd/client-1.34.22.0-research.json');a=p.parse_args()
     recipe=compile_recipe(a.input,json.loads(a.profile.read_text()))
     a.output.parent.mkdir(parents=True,exist_ok=True);a.output.write_text(json.dumps(recipe,indent=2)+'\n')
     print(json.dumps({'recipe':str(a.output),'sha256':source.file_digest(a.output),'assemblies':len(recipe['store']['assemblies'])}))

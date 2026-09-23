@@ -27,7 +27,7 @@ def sha(path):
 def build(args):
     out=args.output.resolve()
     if out.exists():raise ValueError('Bundle output must be new; preserve previous build')
-    matrix_profile=ROOT/'profiles/matrix-global-6.3.4.json'
+    matrix_profile=ROOT/'protocol/baselines/matrix-global-6.3.4.json'
     matrix=json.loads(matrix_profile.read_text())
     if sha(args.matrix)!=matrix['source']['sha256']:raise ValueError('Matrix input differs from pinned profile')
     variant='debug' if args.research_diagnostics else 'release'

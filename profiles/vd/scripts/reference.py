@@ -28,7 +28,7 @@ from dncil.clr.token import StringToken
 from elftools.elf.elffile import ELFFile
 import lz4.block
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 
 def digest(data):
     return hashlib.sha256(data).hexdigest()
@@ -364,7 +364,7 @@ def patch_store(blob, certificate, rule, loader_rule, original_loader, routed_lo
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('input', type=Path)
-    parser.add_argument('--profile', type=Path, default=ROOT / 'profiles/clients/vd-1.34.22.0-research.json')
+    parser.add_argument('--profile', type=Path, default=ROOT / 'profiles/vd/client-1.34.22.0-research.json')
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--build-tools', required=True, type=Path)
     parser.add_argument('--research-debug-key', action='store_true', required=True)

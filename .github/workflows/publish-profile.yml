@@ -6,8 +6,7 @@ on:
       profile:
         description: Reviewed profile to sign and publish
         required: true
-        type: choice
-        options: [generic, vd]
+        type: string
 
 permissions:
   contents: read
@@ -55,11 +54,7 @@ jobs:
           trap 'rm -f "$PICO_PROFILE_KEYSTORE"' EXIT
           printf '%s' "$PICO_PROFILE_KEYSTORE_BASE64" | base64 --decode > "$PICO_PROFILE_KEYSTORE"
           chmod 600 "$PICO_PROFILE_KEYSTORE"
-          case "$PROFILE_KEY" in
-            generic) python3 scripts/build_generic_profile.py --variant release --output "$RUNNER_TEMP/profile-build" ;;
-            vd) python3 scripts/build_vd_profile.py --recipe profiles/recipes/vd.json --variant release --output "$RUNNER_TEMP/profile-build" ;;
-            *) exit 1 ;;
-          esac
+          python3 scripts/build_profile.py --key "$PROFILE_KEY" --variant release --output "$RUNNER_TEMP/profile-build"
       - name: Verify artifact and prepare release
         id: release
         env:
