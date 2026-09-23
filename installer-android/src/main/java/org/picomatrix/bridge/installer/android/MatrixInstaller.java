@@ -131,7 +131,8 @@ public final class MatrixInstaller {
             }
             return InstallationJournal.status(record);
         } catch(Exception e) {
-            String code=knownCode(e.getMessage());progress(id,"failed","",code);throw new IOException(code);
+            android.util.Log.e("MatrixInstaller","Application preparation failed",e);
+            String code=knownCode(e.getMessage());progress(id,"failed","",code);throw new IOException(code,e);
         } finally {
             // PackageInstaller owns its staged bytes after fsync/commit. Keep the original download.
             if(work!=null) removeGenerated(work);PREPARING.set(false);
