@@ -32,7 +32,7 @@ public final class ProfileStore {
     public ProfileStore(Context context,String packageName,String bundledAsset) {
         this.context=context.getApplicationContext();this.packageName=packageName;this.assetName=bundledAsset;
         if(!packageName.matches("org\\.picomatrix\\.bridge\\.profile\\.[a-z][a-z0-9_]*") ||
-            !bundledAsset.matches("[a-zA-Z0-9._-]+\\.apk"))throw new IllegalArgumentException("Invalid profile identity");
+            (bundledAsset!=null&&!bundledAsset.matches("matrix-profile-[a-z][a-z0-9_]*\\.apk")))throw new IllegalArgumentException("Invalid profile identity");
         directory=new File(this.context.getFilesDir(),"matrix-profiles/"+packageName);
     }
 
@@ -55,6 +55,7 @@ public final class ProfileStore {
             Loaded valid=load(new File(directory,prior.getString("sha256")+".apk"),prior.getString("sha256"));
             writePointer(pointer,valid);return valid;
         } catch(Exception ignored) {}
+        if(assetName==null)throw new IOException("profile_unavailable");
         File bundled=File.createTempFile("profile-seed-",".apk",directory);
         try {
             try(InputStream in=context.getAssets().open(assetName);OutputStream out=new FileOutputStream(bundled)) {copyBounded(in,out,MAX_BYTES);}
@@ -137,6 +138,8 @@ public final class ProfileStore {
         ApplicationProfile profile=(ApplicationProfile)instance;
         if(!packageName.equals("org.picomatrix.bridge.profile."+profile.metadata().getString("profileKey")))
             throw new SecurityException("profile_identity");
+        if(profile.metadata().optLong("profileVersionCode",-1)!=version)
+            throw new SecurityException("profile_version");
         return new Loaded(profile,info.getLongVersionCode(),expectedHash,file);
     }
 

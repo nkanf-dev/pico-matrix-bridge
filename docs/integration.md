@@ -7,8 +7,8 @@ Lab 登录 / 恢复账号
   → 取得应用并校验下载
   → 检查 APK
       ├─ 普通应用：保留原包与签名
-      ├─ 已知应用：精确版本使用 profile；其他版本可显式尝试
-      ├─ 可识别的通用 Matrix 接入：使用通用适配
+      ├─ 已知应用：按优先级选 profile；其他版本可显式尝试
+      ├─ 可识别的通用 Matrix 接入：由通用 profile 处理
       └─ 未支持或有歧义：保留下载，提示更新支持
   → 准备副本并签名
   → Android 安装确认和实际结果
@@ -21,6 +21,7 @@ Lab 登录 / 恢复账号
 |---|---|
 | `adapter-core` | JVM/Android 共用检测、runtime 嵌入和 APK 写入接口，无应用特化代码 |
 | `profile-vd-code` / `profile-vd` | 完整 VD 适配实现及其独立签名 APK |
+| `profile-generic-code` / `profile-generic` | 通用 native Matrix 适配实现及其独立签名 APK |
 | `account-android` | Passport 登录、会话迁移、目标应用授权和安装后交接 |
 | `installer-android` | profile 同签名校验与动态加载、Android Keystore 签名、PackageInstaller、结果收据和恢复 |
 | `embedded-bootstrap` / `runtime` | 应用内启动、登录、Matrix SDK 路由和授权续期 |
@@ -28,7 +29,7 @@ Lab 登录 / 恢复账号
 
 ## 宿主调用
 
-在工作线程运行网络请求和 APK 准备。将通用 bundle 放在 assets 的 `matrix-bridge/`，将初始已签名 profile 放在 `matrix-profile-vd.apk`。`ProfileStore` 仅在验证它与 Lab 同签名、API 和包身份后从私有只读文件加载代码：
+在工作线程运行网络请求和 APK 准备。将通用 bundle 放在 assets 的 `matrix-bridge/`，将初始已签名 profile 放在 `matrix-profile-<key>.apk`。`ProfileStore` 仅在验证它与 Lab 同签名、API 和包身份后从私有只读文件加载代码：
 
 ```java
 MatrixAccount account = new MatrixAccount(context);
@@ -39,15 +40,19 @@ MatrixInstaller installer = new MatrixInstaller(context);
 AutoCloseable subscription = installer.observe(status -> updateUi(status.code));
 installer.reconcile();
 File bundle = AssetBundle.open(context, "matrix-bridge");
-ProfileStore profiles = new ProfileStore(context, "org.picomatrix.bridge.profile.vd", "matrix-profile-vd.apk");
-ApplicationProfile profile = profiles.current().implementation;
-AdapterEngine.Inspection result = AdapterEngine.inspect(downloadedApk, bundle, profile);
+List<ApplicationProfile> profiles = new ArrayList<>();
+for (String key : discoveredKeys) {
+    ProfileStore store = new ProfileStore(context, "org.picomatrix.bridge.profile." + key,
+        bundledKeys.contains(key) ? "matrix-profile-" + key + ".apk" : null);
+    profiles.add(store.current().implementation);
+}
+AdapterEngine.Inspection result = AdapterEngine.inspect(downloadedApk, bundle, profiles);
 // 宿主根据检测结果和用户选择指定安装方式。
-installer.prepareAndInstall(downloadedApk, bundle, MatrixInstaller.Mode.ADAPTED, profile);
+installer.prepareAndInstall(downloadedApk, bundle, MatrixInstaller.Mode.ADAPTED, profiles);
 // 界面销毁时 subscription.close()；安装结果由 manifest receiver 接收。
 ```
 
-`Mode.ORIGINAL` 安装保留签名的原包；`Mode.ADAPTED` 要求检测结果可进入适配准备，否则停止并返回原因。详情页可用 `AdapterEngine.supportsProfile(profile, packageName, versionCode)` 查询精确版本支持，用 `canAttemptProfile(profile, packageName)` 显示其他版本的尝试入口。尝试时逐项验证补丁输入；不兼容就保留下载和已安装副本，不自动改装原版。下载后以 `inspect` 的结果为准。检测记录应按原包名和版本保存，在用户暂不安装时也予以保留。Lab 可调用 `profiles.activate(downloadedProfile, expectedSha256, expectedVersion)` 独立切换 profile；失败保留原版本。
+`Mode.ORIGINAL` 安装保留签名的原包；`Mode.ADAPTED` 要求检测结果可进入适配准备，否则停止并返回原因。详情页可用 `AdapterEngine.supportsProfile(profile, packageName, versionCode)` 查询精确版本支持，用 `canAttemptProfile(profile, packageName)` 显示其他版本的尝试入口。尝试时逐项验证补丁输入；不兼容就保留下载和已安装副本，不自动改装原版。下载后以 `inspect` 的结果为准。检测记录应按原包名和版本保存，在用户暂不安装时也予以保留。Lab 可调用对应 key 的 `ProfileStore.activate(downloadedProfile, expectedSha256, expectedVersion)` 独立切换 profile；失败保留原版本。用户安装完成后可自行点“打开”，Lab 不主动启动应用。
 
 观察回调不保证在 UI 线程。Activity 重建后重新订阅并调用 `reconcile()`。`prepareAndInstall` 返回表示已提交系统安装，不表示应用已装好。正式结果来自 `InstallationStatus`：
 

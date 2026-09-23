@@ -4,6 +4,7 @@ application { mainClass = 'org.picomatrix.bridge.tools.Main' }
 dependencies {
     implementation project(':adapter-core')
     implementation project(':profile-vd-code')
+    implementation project(':profile-generic-code')
     implementation 'org.smali:dexlib2:2.5.2'
     implementation 'org.json:json:20240303'
     implementation 'io.github.reandroid:ARSCLib:1.4.0'

@@ -26,7 +26,7 @@ The [development guide](docs/development.md) explains how to build Lab with the 
 
 **Virtual Desktop for PICO 1.34.22.0** has an application profile covering installation, account access and desktop connection.
 
-Other apps go through automatic detection. Apps without Matrix dependencies install as usual; recognized Matrix integrations offer a generic adaptation. You can also choose the original app. Application profiles handle cases that need specific changes. If an app needs support, include its name, version, headset model and the behavior you encountered in an issue.
+Other apps go through automatic detection. Apps without Matrix dependencies install as usual; recognized Matrix integrations can use the generic profile. You can also choose the original app. More specific profiles handle cases that need additional changes. If an app needs support, include its name, version, headset model and the behavior you encountered in an issue.
 
 ## Build and integrate
 

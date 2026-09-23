@@ -1,6 +1,6 @@
 # 维护应用与协议支持
 
-应用适配规则与协议基线分别放在 `profiles/clients/` 和 `profiles/`。更新应用时维护对应 profile；Matrix 协议变化时重新提取基线。两条路径共用检测、构建和安装组件。
+应用适配规则与协议基线分别放在 `profiles/clients/` 和 `profiles/`。每个 profile 在 `profiles/manifests/<key>.json` 声明匹配规则与优先级。更新应用时维护对应 profile；Matrix 协议变化时重新提取基线。两条路径共用检测、构建和安装组件。
 
 ## 1. 取得并检查输入
 
@@ -29,11 +29,11 @@ python3 scripts/matrix.py check-generated
 
 VD profile 固定原始 APK、程序集、方法、字符串和原生指令的身份。`compile_vd_profile.py` 根据原始元数据定位，生成包含原始字节校验的 recipe；`profile-vd-code` 执行完整 VD 适配，`adapter-core` 只提供通用检查、runtime 嵌入与 APK 写入。profile APK 同时装入 VD 代码和 recipe，使用本次实际目标签名证书计算替换值。比较指令、分支和无关程序集保持不变。
 
-客户端更新时，先静态定位变化，再调整 profile 并执行差分回归。Lab 可让用户对已知应用的新版本显式尝试现有 profile；整包哈希与版本差异本身不阻止尝试，但目标程序集、AOT 镜像、原生库和补丁操作数仍必须与 recipe 匹配。不匹配会在安装前失败，并保留原始下载及现有应用；已知应用不会自动切换到通用适配。通用路径独立处理已识别的 native Matrix 接入，要求明确的应用标识、入口和 loader 身份。
+客户端更新时，先静态定位变化，再调整 profile 并执行差分回归。Lab 可让用户对已知应用的新版本显式尝试现有 profile；整包哈希与版本差异本身不阻止尝试，但目标程序集、AOT 镜像、原生库和补丁操作数仍必须与 recipe 匹配。不匹配会在安装前失败，并保留原始下载及现有应用。通用 native Matrix 适配也由独立的 `generic` profile 提供，要求明确的应用标识、入口和 loader 身份。profile 按优先级、包名匹配精度、精确版本依次选择；`*` 通用 profile 的优先级最低。Lab 集成构建会拒绝两个 profile 使用相同的包名匹配规则和优先级。
 
 ## 4. 构建与检查
 
-按 [开发说明](development.md) 分别生成通用 runtime bundle 和签名 profile APK，再构建 Lab。bundle 清单记录 runtime/bootstrap 身份，不再包含 VD recipe；profile 单独记录原始 APK 身份。release 构建默认不带诊断探针。新 profile 构建使用更新的 UTC 秒，在 Bridge 仓库创建 `vd-profile-YYYYMMDDTHHMMSSZ` release 并附上 `matrix-profile-vd.apk`；Lab 下载后校验哈希与 Lab 同签名再切换，失败保留已验证版本。
+按 [开发说明](development.md) 分别生成通用 runtime bundle 和各个签名 profile APK，再构建 Lab。`scripts/profile_registry.py` 会在源码检查和构建 profile 时拒绝重复匹配规则；Lab 集成构建也会核对实际打包 APK。bundle 清单记录 runtime/bootstrap 身份，应用 recipe 留在 profile。release 构建默认不带诊断探针。每个 profile 使用更新的 UTC 秒，在 Bridge 仓库创建 `<key>-profile-YYYYMMDDTHHMMSSZ` release 并附上 `matrix-profile-<key>.apk`；Lab 下载后校验哈希与 Lab 同签名再切换，失败保留已验证版本。新增社区 profile 可独立提交清单、代码与检查样本，经维护者审查和同签名构建后发布；Lab 按 key 自动发现。
 
 ```sh
 ./scripts/verify.sh

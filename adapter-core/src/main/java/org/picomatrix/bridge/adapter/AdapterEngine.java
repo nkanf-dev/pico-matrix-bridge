@@ -14,22 +14,24 @@ import org.jf.dexlib2.dexbacked.DexBackedDexFile;
 /** Account-free, Android 29 compatible APK preparation. Signing and installation belong to the host. */
 public final class AdapterEngine {
     private AdapterEngine() {}
-    public enum Route { PASSTHROUGH, PROFILE, GENERIC, ANALYSIS_REQUIRED }
+    public enum Route { PASSTHROUGH, PROFILE, ANALYSIS_REQUIRED }
     public static final class Inspection {
         public final Route route;
         public final boolean matrixDetected,profileExact;
         public final long versionCode;
         public final String packageName,profileId,appId,reason,inputSha256;
         private final JSONObject report,profile;
-        private Inspection(Route route,JSONObject report,JSONObject profile,String reason) {
-            this.route=route;this.report=report;this.profile=profile;this.reason=reason;
+        private final ApplicationProfile implementation;
+        private Inspection(Route route,JSONObject report,JSONObject profile,ApplicationProfile implementation,String reason) {
+            this.route=route;this.report=report;this.profile=profile;this.implementation=implementation;this.reason=reason;
             JSONObject manifest=report.getJSONObject("manifest");
             this.packageName=manifest.getString("package");
             this.versionCode=versionCode(manifest);
             this.matrixDetected=report.getJSONObject("matrix").getBoolean("detected");
             this.inputSha256=report.getJSONObject("source").getString("sha256");
-            this.profileExact=route==Route.PROFILE && profile!=null && inputSha256.equals(profile.optString("inputSha256")) &&
-                (!profile.has("versionCode") || versionCode==profile.optLong("versionCode",-1));
+            JSONObject identity=implementation==null?null:implementation.metadata();
+            this.profileExact=route==Route.PROFILE && identity!=null && inputSha256.equals(identity.optString("inputSha256")) &&
+                (!identity.has("versionCode") || versionCode==identity.optLong("versionCode",-1));
             this.profileId=profile==null?null:profile.optString("id",null);this.appId=profile==null?null:profile.optString("appId",null);
         }
     }
@@ -85,52 +87,59 @@ public final class AdapterEngine {
         }
         return genericTargetPackage(originalPackage);
     }
-    private static String genericTargetPackage(String packageName) {
+    public static String genericTargetPackage(String packageName) {
         try {return "org.picomatrix.a"+Portable.sha(packageName.getBytes(StandardCharsets.UTF_8)).substring(0,9);}
         catch(Exception e) {throw new IllegalStateException("SHA-256 unavailable",e);}
     }
-    public static Inspection inspect(File input,File bundle,ApplicationProfile profile) throws Exception { return inspect(input.toPath(),bundle.toPath(),profile); }
-    public static Inspection inspect(Path input,Path bundle,ApplicationProfile profile) throws Exception {
+    public static Inspection inspect(File input,File bundle,List<ApplicationProfile> profiles) throws Exception { return inspect(input.toPath(),bundle.toPath(),profiles); }
+    public static Inspection inspect(Path input,Path bundle,List<ApplicationProfile> profiles) throws Exception {
         JSONObject report=ApkInspector.inspect(input);Bundle b=Files.isRegularFile(bundle.resolve("bundle.json"))?new Bundle(bundle):null;
-        return select(report,b,profile);
+        return select(report,b,profiles);
     }
-    static Inspection select(JSONObject report,Bundle bundle,ApplicationProfile implementation) throws Exception {
+    private static final class Candidate {
+        final ApplicationProfile implementation;final JSONObject metadata;final int priority,specificity,versionMatch;
+        final long profileVersion;final String key;
+        Candidate(ApplicationProfile implementation,JSONObject metadata,int specificity,int versionMatch) {
+            this.implementation=implementation;this.metadata=metadata;this.priority=implementation.priority();
+            this.specificity=specificity;this.versionMatch=versionMatch;
+            JSONObject identity=implementation.metadata();
+            this.profileVersion=identity.optLong("profileVersionCode",0);
+            this.key=identity.optString("profileKey",identity.optString("id",""));
+        }
+    }
+    static Inspection select(JSONObject report,Bundle bundle,List<ApplicationProfile> profiles) throws Exception {
         String packageName=report.getJSONObject("manifest").getString("package");
-        JSONObject profile=implementation==null?null:implementation.metadata();
-        if(profile!=null&&packageName.equals(profile.getString("package"))) {
-            boolean exact=profile.getString("inputSha256").equals(report.getJSONObject("source").getString("sha256")) &&
-                (!profile.has("versionCode") || profile.getLong("versionCode")==versionCode(report.getJSONObject("manifest")));
-            return new Inspection(Route.PROFILE,report,profile,exact?"Checked application override":"Profile attempt; targeted inputs still require verification");
+        List<Candidate> candidates=new ArrayList<>();
+        for(ApplicationProfile implementation:profiles) {
+            String matcher=implementation.packageMatcher();
+            if(!matcher.equals("*")&&!matcher.equals(packageName))continue;
+            JSONObject selected=implementation.select(report);
+            if(selected!=null) {
+                JSONObject identity=implementation.metadata();
+                boolean exact=identity.optString("inputSha256").equals(report.getJSONObject("source").getString("sha256")) &&
+                    (!identity.has("versionCode") || identity.getLong("versionCode")==versionCode(report.getJSONObject("manifest")));
+                candidates.add(new Candidate(implementation,selected,matcher.equals("*")?0:1,exact?1:0));
+            }
         }
-        if(!report.getJSONObject("matrix").getBoolean("detected"))return new Inspection(Route.PASSTHROUGH,report,null,"Ordinary application retains original install identity and signature");
-        if(report.getJSONObject("managedRuntime").getBoolean("requiresManagedCodeReview"))return new Inspection(Route.ANALYSIS_REQUIRED,report,null,"Unknown managed Matrix runtime requires analysis");
-        if(bundle==null)return new Inspection(Route.ANALYSIS_REQUIRED,report,null,"Matrix dependencies require a compatibility bundle");
-        JSONObject matrix=report.getJSONObject("matrix"),generic=bundle.manifest.getJSONObject("generic");
-        if(matrix.getJSONArray("dexReferences").length()!=0)return new Inspection(Route.ANALYSIS_REQUIRED,report,null,"DEX routing or integrity requires analysis");
-        JSONObject approved=generic.getJSONObject("libraries"),libraries=new JSONObject();JSONArray actual=matrix.getJSONArray("libraries");
-        for(int i=0;i<actual.length();i++) {
-            JSONObject library=actual.getJSONObject(i);String entry=library.getString("entry");
-            if(!approved.has(entry)||!approved.getJSONObject(entry).getString("sha256").equals(library.getString("sha256")))return new Inspection(Route.ANALYSIS_REQUIRED,report,null,"Unknown native Matrix dependency");
-            libraries.put(entry,approved.getJSONObject(entry));
+        if(!candidates.isEmpty()) {
+            candidates.sort(Comparator.comparingInt((Candidate c)->c.priority).thenComparingInt(c->c.specificity)
+                .thenComparingInt(c->c.versionMatch).thenComparingLong(c->c.profileVersion).reversed()
+                .thenComparing(c->c.key));
+            Candidate chosen=candidates.get(0);
+            return new Inspection(Route.PROFILE,report,chosen.metadata,chosen.implementation,
+                chosen.versionMatch==1?"Checked application override":"Profile attempt; targeted inputs still require verification");
         }
-        if(libraries.length()==0)return new Inspection(Route.ANALYSIS_REQUIRED,report,null,"No supported native dependency");
-        Set<String> ids=new HashSet<>(),names=new HashSet<>();JSONArray selectors=generic.getJSONArray("appIdMetadataNames");for(int i=0;i<selectors.length();i++)names.add(selectors.getString(i));
-        JSONArray metadata=report.getJSONObject("manifest").getJSONArray("metadata");
-        for(int i=0;i<metadata.length();i++){JSONObject item=metadata.getJSONObject(i);if(names.contains(item.optString("name"))){String value=item.optString("value");if(!value.matches("[A-Za-z0-9_-]{8,128}"))return new Inspection(Route.ANALYSIS_REQUIRED,report,null,"Resource-backed or invalid app ID requires analysis");ids.add(value);}}
-        if(ids.size()!=1)return new Inspection(Route.ANALYSIS_REQUIRED,report,null,"Missing or ambiguous application ID");
-        String target=genericTargetPackage(packageName);
-        JSONObject selected=new JSONObject().put("id","generic-native-matrix-v1").put("status","research").put("package",packageName).put("outputPackage",target)
-            .put("inputSha256",report.getJSONObject("source").getString("sha256")).put("appId",ids.iterator().next()).put("libraries",libraries).put("account",generic.getJSONObject("account"));
-        return new Inspection(Route.GENERIC,report,selected,"Native Matrix adaptation available");
+        if(!report.getJSONObject("matrix").getBoolean("detected"))return new Inspection(Route.PASSTHROUGH,report,null,null,"Ordinary application retains original install identity and signature");
+        return new Inspection(Route.ANALYSIS_REQUIRED,report,null,null,"No installed profile accepts this Matrix dependency");
     }
-    public static Result prepare(File original,File bundle,File output,byte[] certificate,String hostPackage,String hostSigner,ApplicationProfile profile) throws Exception {
-        return prepare(original.toPath(),bundle.toPath(),output.toPath(),certificate,hostPackage,hostSigner,profile);
+    public static Result prepare(File original,File bundle,File output,byte[] certificate,String hostPackage,String hostSigner,List<ApplicationProfile> profiles) throws Exception {
+        return prepare(original.toPath(),bundle.toPath(),output.toPath(),certificate,hostPackage,hostSigner,profiles);
     }
-    public static Result prepare(Path original,Path bundleDir,Path outputUnsigned,byte[] targetCertificateDer,String hostPackage,String hostCertificateSha256,ApplicationProfile implementation) throws Exception {
+    public static Result prepare(Path original,Path bundleDir,Path outputUnsigned,byte[] targetCertificateDer,String hostPackage,String hostCertificateSha256,List<ApplicationProfile> profiles) throws Exception {
         Path source=original.toRealPath(),output=outputUnsigned.toAbsolutePath().normalize();
         Portable.require(!source.equals(output)&&!Files.exists(output),"Output must be a new copy");
         JSONObject report=ApkInspector.inspect(source);Bundle bundle=Files.isRegularFile(bundleDir.resolve("bundle.json"))?new Bundle(bundleDir):null;
-        Inspection inspection=select(report,bundle,implementation);
+        Inspection inspection=select(report,bundle,profiles);
         if(inspection.route==Route.PASSTHROUGH)return new Result(source,false,inspection,inspection.inputSha256,null);
         Portable.require(inspection.route!=Route.ANALYSIS_REQUIRED,inspection.reason);
         Portable.require(bundle!=null,"Compatibility runtime bundle missing");
@@ -142,12 +151,11 @@ public final class AdapterEngine {
         Files.createDirectories(output.getParent());Path work=Files.createTempDirectory(output.getParent(),"matrix-prepare-");
         try {
             JSONObject embedded=embedded(source,bundle,work,metadata,targetSigner,hostPackage,hostCertificateSha256.toLowerCase(Locale.ROOT));
-            Map<String,byte[]> replacements=inspection.route==Route.PROFILE
-                ? implementation.prepare(source,report,targetCertificateDer,metadata.getString("outputPackage")) : Map.of();
+            Map<String,byte[]> replacements=inspection.implementation.prepare(source,report,targetCertificateDer,metadata.getString("outputPackage"));
             Path staged=work.resolve("unsigned.apk");
             ApkRewriter.adapt(source,staged,metadata,report,embedded,replacements);
             verifyCopy(source,staged,metadata,embedded,replacements.keySet());
-            if(inspection.route==Route.PROFILE)implementation.verify(source,staged,replacements);
+            inspection.implementation.verify(source,staged,replacements);
             Portable.require(inspection.inputSha256.equals(Portable.sha(source)),"Original changed during preparation");
             String hash=Portable.sha(staged);Files.move(staged,output,StandardCopyOption.ATOMIC_MOVE);
             return new Result(output,true,inspection,hash,targetSigner);

@@ -30,8 +30,6 @@ def build(args):
     matrix_profile=ROOT/'profiles/matrix-global-6.3.4.json'
     matrix=json.loads(matrix_profile.read_text())
     if sha(args.matrix)!=matrix['source']['sha256']:raise ValueError('Matrix input differs from pinned profile')
-    generic=json.loads((ROOT/'profiles/native-matrix-v1.json').read_text())
-    if generic['schema']!=1:raise ValueError('Unknown generic Matrix profile')
     variant='debug' if args.research_diagnostics else 'release'
     def artifact(module):
         folder=ROOT/module/f'build/outputs/apk/{variant}'
@@ -72,7 +70,6 @@ def build(args):
         shutil.rmtree(dex)
         manifest={'schema':1,'runtime':'matrix-runtime-template.zip','bootstrap':'bootstrap.dex','matrixProfile':'matrix-runtime-profile.json',
                   'variant':variant,'researchDiagnostics':args.research_diagnostics,'native':native,'bootstrapClasses':dex_evidence['bootstrapClasses'],
-                  'generic':{key:generic[key] for key in ['libraries','appIdMetadataNames','account']},
                   'sources':{'matrixSha256':sha(args.matrix),'runtimeSha256':sha(runtime),'bootstrapSha256':sha(bootstrap)},
                   'files':{p.name:{'sha256':sha(p),'bytes':p.stat().st_size} for p in sorted(stage.iterdir()) if p.is_file()}}
         (stage/'bundle.json').write_text(json.dumps(manifest,indent=2)+'\n')

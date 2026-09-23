@@ -17,6 +17,33 @@ import com.reandroid.arsc.chunk.xml.AndroidManifestBlock;
 
 /** A source-only generic native APK fixture verifies the complete preparation route. */
 public class PreparationTest {
+    @Test public void genericProfileOnlyAcceptsCheckedNativeMatrixInputs() throws Exception {
+        String library="lib/arm64-v8a/libloader.so";
+        JSONObject recipe=new JSONObject().put("schema",1).put("profile",new JSONObject().put("profileKey","generic")
+                .put("packageMatcher","*").put("priority",0).put("package","*").put("outputPackage","*"))
+            .put("libraries",new JSONObject().put(library,new JSONObject().put("sha256","known").put("replacements",1)))
+            .put("appIdMetadataNames",new JSONArray().put("app_id")).put("account",new JSONObject());
+        var profile=new GenericMatrixProfile(recipe);
+        JSONObject report=new JSONObject().put("manifest",new JSONObject().put("package","example.app")
+                .put("metadata",new JSONArray().put(new JSONObject().put("name","app_id").put("value","known_app_id"))))
+            .put("source",new JSONObject().put("sha256","original"))
+            .put("managedRuntime",new JSONObject().put("requiresManagedCodeReview",false))
+            .put("matrix",new JSONObject().put("detected",true).put("dexReferences",new JSONArray())
+                .put("libraries",new JSONArray().put(new JSONObject().put("entry",library).put("sha256","known"))));
+        assertNotNull(profile.select(report));
+        JSONObject unchecked=new JSONObject(report.toString());unchecked.getJSONObject("matrix").put("detected",false);
+        assertNull(profile.select(unchecked));
+        unchecked=new JSONObject(report.toString());unchecked.getJSONObject("managedRuntime").put("requiresManagedCodeReview",true);
+        assertNull(profile.select(unchecked));
+        unchecked=new JSONObject(report.toString());unchecked.getJSONObject("matrix").getJSONArray("dexReferences").put("Lunknown/Managed;");
+        assertNull(profile.select(unchecked));
+        unchecked=new JSONObject(report.toString());unchecked.getJSONObject("matrix").getJSONArray("libraries")
+            .put(new JSONObject().put("entry","lib/arm64-v8a/unknown.so").put("sha256","unknown"));
+        assertNull(profile.select(unchecked));
+        unchecked=new JSONObject(report.toString());unchecked.getJSONObject("manifest").getJSONArray("metadata")
+            .put(new JSONObject().put("name","app_id").put("value","second_app_id"));
+        assertNull(profile.select(unchecked));
+    }
     private byte[] dex(String type) throws Exception {
         var clazz=new ImmutableClassDef(type,1,"Ljava/lang/Object;",Collections.emptyList(),null,Collections.emptyList(),Collections.emptyList(),Collections.emptyList());
         DexPool pool=new DexPool(Opcodes.forApi(29));pool.internClass(clazz);MemoryDataStore out=new MemoryDataStore();pool.writeTo(out);return Arrays.copyOf(out.getBuffer(),out.getSize());
@@ -34,14 +61,16 @@ public class PreparationTest {
             String originalHash=Portable.sha(input);Path bundle=dir.resolve("bundle");Files.createDirectory(bundle);
             zip(bundle.resolve("runtime.zip"),Collections.singletonMap("classes.dex",dex("Lruntime/Only;")));Files.write(bundle.resolve("bootstrap.dex"),dex("Lorg/picomatrix/bridge/embedded/LaunchActivity;"));
             Portable.json(bundle.resolve("matrix.json"),new JSONObject().put("source","fixture"));
-            Portable.json(bundle.resolve("recipe.json"),new JSONObject().put("schema",1).put("profile",new JSONObject().put("id","known").put("package","known.app").put("inputSha256","known")));
-            JSONObject files=new JSONObject();for(String name:new String[]{"runtime.zip","bootstrap.dex","matrix.json","recipe.json"})files.put(name,new JSONObject().put("bytes",Files.size(bundle.resolve(name))).put("sha256",Portable.sha(bundle.resolve(name))));
-            Portable.json(bundle.resolve("bundle.json"),new JSONObject().put("schema",1).put("recipe","recipe.json").put("runtime","runtime.zip").put("bootstrap","bootstrap.dex").put("matrixProfile","matrix.json").put("files",files).put("native",new JSONArray())
-                .put("generic",new JSONObject().put("libraries",new JSONObject().put(library,new JSONObject().put("sha256",Portable.sha(loader)).put("replacements",1))).put("appIdMetadataNames",new JSONArray().put("app_id")).put("account",new JSONObject().put("agwKey","protocol-fixture"))));
-            assertEquals(AdapterEngine.Route.GENERIC,AdapterEngine.inspect(input,bundle,null).route);
+            JSONObject files=new JSONObject();for(String name:new String[]{"runtime.zip","bootstrap.dex","matrix.json"})files.put(name,new JSONObject().put("bytes",Files.size(bundle.resolve(name))).put("sha256",Portable.sha(bundle.resolve(name))));
+            Portable.json(bundle.resolve("bundle.json"),new JSONObject().put("schema",1).put("runtime","runtime.zip").put("bootstrap","bootstrap.dex").put("matrixProfile","matrix.json").put("files",files).put("native",new JSONArray()));
+            JSONObject generic=new JSONObject().put("schema",1).put("profile",new JSONObject().put("profileKey","generic").put("package","*").put("outputPackage","*"))
+                .put("libraries",new JSONObject().put(library,new JSONObject().put("sha256",Portable.sha(loader)).put("replacements",1)))
+                .put("appIdMetadataNames",new JSONArray().put("app_id")).put("account",new JSONObject().put("agwKey","protocol-fixture"));
+            var profiles=List.<ApplicationProfile>of(new GenericMatrixProfile(generic));
+            assertEquals(AdapterEngine.Route.PROFILE,AdapterEngine.inspect(input,bundle,profiles).route);
             byte[] cert;try(InputStream in=getClass().getResourceAsStream("/portable-test-certificate.pem")){cert=CertificateFactory.getInstance("X.509").generateCertificate(in).getEncoded();}
             String hostSigner=String.join("",Collections.nCopies(64,"1"));Path output=dir.resolve("adapted.apk");
-            var result=AdapterEngine.prepare(input,bundle,output,cert,"host.package",hostSigner,null);
+            var result=AdapterEngine.prepare(input,bundle,output,cert,"host.package",hostSigner,profiles);
             assertTrue(result.requiresSigning);assertEquals("generic_app_123",result.appId);assertEquals(originalHash,Portable.sha(input));assertEquals(Portable.sha(output),result.outputSha256);
             assertNotEquals("example.nativeapp",result.packageName);assertEquals(AdapterEngine.targetPackage(null,"example.nativeapp"),result.packageName);assertEquals(Portable.sha(cert),result.targetSignerSha256);
             try(ZipFile apk=new ZipFile(output.toFile())) {
@@ -51,7 +80,7 @@ public class PreparationTest {
                 assertNotNull(apk.getEntry("classes2.dex"));
             }
             try(var apk=com.reandroid.apk.ApkModule.loadApkFile(output.toFile())) {assertEquals("Original label",apk.getAndroidManifestBlock().getApplicationLabelString());assertNotNull(apk.getAndroidManifestBlock().getUsesPermission("android.permission.INTERNET"));}
-            assertThrows(IllegalArgumentException.class,()->AdapterEngine.prepare(input,bundle,output,cert,"host.package",hostSigner,null));
+            assertThrows(IllegalArgumentException.class,()->AdapterEngine.prepare(input,bundle,output,cert,"host.package",hostSigner,profiles));
         } finally {Portable.deleteTree(dir);}
     }
 }

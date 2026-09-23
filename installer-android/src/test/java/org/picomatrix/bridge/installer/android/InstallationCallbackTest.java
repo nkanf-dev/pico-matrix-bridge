@@ -7,10 +7,10 @@ import static org.junit.Assert.*;
 public class InstallationCallbackTest {
     @Test public void collidingGenericPackageCannotReplaceAnotherApplication() throws Exception {
         JSONObject installed=new JSONObject().put("originalPackage","example.first").put("appId","first-id");
-        assertTrue(MatrixInstaller.sameGenericOrigin(installed,"example.first","first-id"));
-        assertFalse(MatrixInstaller.sameGenericOrigin(installed,"example.second","first-id"));
-        assertFalse(MatrixInstaller.sameGenericOrigin(installed,"example.first","other-id"));
-        assertFalse(MatrixInstaller.sameGenericOrigin(new JSONObject(),"example.first","first-id"));
+        assertTrue(MatrixInstaller.sameAdaptedOrigin(installed,"example.first","first-id"));
+        assertFalse(MatrixInstaller.sameAdaptedOrigin(installed,"example.second","first-id"));
+        assertFalse(MatrixInstaller.sameAdaptedOrigin(installed,"example.first","other-id"));
+        assertFalse(MatrixInstaller.sameAdaptedOrigin(new JSONObject(),"example.first","first-id"));
     }
     @Test public void lostConfirmationIsRequestedAgainInsteadOfBlockingNextInstall() {
         assertEquals(MatrixInstaller.Recovery.RECOMMIT,MatrixInstaller.recoveryAction("awaiting_install",true,true));
@@ -43,7 +43,6 @@ public class InstallationCallbackTest {
     }
     @Test public void adaptedModeRequiresSupportedProfileOrGenericDependency() throws Exception {
         assertTrue(MatrixInstaller.shouldAdapt(MatrixInstaller.Mode.ADAPTED,org.picomatrix.bridge.adapter.AdapterEngine.Route.PROFILE));
-        assertTrue(MatrixInstaller.shouldAdapt(MatrixInstaller.Mode.ADAPTED,org.picomatrix.bridge.adapter.AdapterEngine.Route.GENERIC));
         for(var route:new org.picomatrix.bridge.adapter.AdapterEngine.Route[]{org.picomatrix.bridge.adapter.AdapterEngine.Route.PASSTHROUGH,org.picomatrix.bridge.adapter.AdapterEngine.Route.ANALYSIS_REQUIRED})
             assertEquals("adaptation_unavailable",assertThrows(java.io.IOException.class,()->MatrixInstaller.shouldAdapt(MatrixInstaller.Mode.ADAPTED,route)).getMessage());
         assertFalse(MatrixInstaller.shouldAdapt(null,org.picomatrix.bridge.adapter.AdapterEngine.Route.PASSTHROUGH));

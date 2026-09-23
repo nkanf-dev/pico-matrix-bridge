@@ -4,10 +4,9 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 import org.json.*;
 import java.nio.file.*;
-import java.util.Map;
+import java.util.*;
 
 public class RouteTest {
-    private static final String LIB="lib/arm64-v8a/libloader.so";
     private ApplicationProfile profile() {
         return new ApplicationProfile() {
             @Override public JSONObject metadata() {
@@ -22,13 +21,24 @@ public class RouteTest {
     private AdapterEngine.Bundle bundle(Path dir) throws Exception {
         Path path=dir.resolve("runtime.zip");Files.write(path,new byte[]{1,2,3});
         JSONObject files=new JSONObject().put("runtime.zip",new JSONObject().put("sha256",Portable.sha(path)).put("bytes",Files.size(path)));
-        JSONObject rule=new JSONObject().put("sha256","loaderhash").put("replacements",1);
         JSONObject manifest=new JSONObject().put("schema",1).put("bootstrap","runtime.zip").put("runtime","runtime.zip")
-            .put("matrixProfile","runtime.zip").put("files",files)
-            .put("generic",new JSONObject().put("libraries",new JSONObject().put(LIB,rule))
-                .put("appIdMetadataNames",new JSONArray().put("app_id"))
-                .put("account",new JSONObject().put("agwKey","vendor-protocol")));
+            .put("matrixProfile","runtime.zip").put("files",files);
         Portable.json(dir.resolve("bundle.json"),manifest);return new AdapterEngine.Bundle(dir);
+    }
+    private ApplicationProfile candidate(String id,String matcher,int priority,String inputHash,long version) {
+        return new ApplicationProfile() {
+            @Override public JSONObject metadata() {
+                JSONObject value=new JSONObject().put("id",id).put("packageMatcher",matcher).put("package",matcher)
+                    .put("outputPackage","example.output").put("priority",priority).put("appId","client123");
+                if(inputHash!=null)value.put("inputSha256",inputHash).put("versionCode",version);
+                return value;
+            }
+            @Override public JSONObject select(JSONObject inspection) {
+                return metadata().put("package",inspection.getJSONObject("manifest").getString("package"));
+            }
+            @Override public Map<String,byte[]> prepare(Path original,JSONObject inspection,byte[] certificate,String target) {return Map.of();}
+            @Override public void verify(Path original,Path unsigned,Map<String,byte[]> replacements) {}
+        };
     }
     private JSONObject report(String pkg,String hash) {
         return new JSONObject().put("manifest",new JSONObject().put("package",pkg).put("versionCode",10703)
@@ -36,32 +46,36 @@ public class RouteTest {
             .put("source",new JSONObject().put("sha256",hash))
             .put("managedRuntime",new JSONObject().put("requiresManagedCodeReview",false))
             .put("matrix",new JSONObject().put("detected",true).put("dexReferences",new JSONArray())
-                .put("libraries",new JSONArray().put(new JSONObject().put("entry",LIB).put("sha256","loaderhash"))));
+                .put("libraries",new JSONArray()));
     }
     @Test public void aMatchingImplementationOwnsAttemptsAcrossAppVersions() throws Exception {
         Path dir=Files.createTempDirectory("matrix-route-");try {
             var bundle=bundle(dir);var profile=profile();
-            assertTrue(AdapterEngine.select(report("example.target","original"),bundle,profile).profileExact);
-            assertEquals(AdapterEngine.Route.PROFILE,AdapterEngine.select(report("example.target","changed"),bundle,profile).route);
+            assertTrue(AdapterEngine.select(report("example.target","original"),bundle,List.of(profile)).profileExact);
+            assertEquals(AdapterEngine.Route.PROFILE,AdapterEngine.select(report("example.target","changed"),bundle,List.of(profile)).route);
             JSONObject newer=report("example.target","changed");newer.getJSONObject("manifest").put("versionCode",10704);
-            assertFalse(AdapterEngine.select(newer,bundle,profile).profileExact);
-            assertEquals(AdapterEngine.Route.ANALYSIS_REQUIRED,AdapterEngine.select(newer,null,null).route);
-            assertEquals(AdapterEngine.Route.GENERIC,AdapterEngine.select(report("another.native.app","changed"),bundle,profile).route);
+            assertFalse(AdapterEngine.select(newer,bundle,List.of(profile)).profileExact);
+            assertEquals(AdapterEngine.Route.ANALYSIS_REQUIRED,AdapterEngine.select(newer,null,List.of()).route);
+            assertEquals(AdapterEngine.Route.ANALYSIS_REQUIRED,AdapterEngine.select(report("another.native.app","changed"),bundle,List.of(profile)).route);
             assertTrue(AdapterEngine.canAttemptProfile(profile,"example.target"));
             assertTrue(AdapterEngine.supportsProfile(profile,"example.target",10703));
             assertFalse(AdapterEngine.supportsProfile(profile,"example.target",10704));
         } finally {Portable.deleteTree(dir);}
     }
-    @Test public void ambiguousIdentityDexRoutingAndUnknownNativeLibrariesRequireAnalysis() throws Exception {
-        Path dir=Files.createTempDirectory("matrix-route-");try {
-            var bundle=bundle(dir);JSONObject report=report("another.native.app","original");
-            report.getJSONObject("manifest").getJSONArray("metadata").put(new JSONObject().put("name","app_id").put("value","different123"));
-            assertEquals(AdapterEngine.Route.ANALYSIS_REQUIRED,AdapterEngine.select(report,bundle,null).route);
-            report=report("another.native.app","original");report.getJSONObject("matrix").getJSONArray("dexReferences").put("dependency");
-            assertEquals(AdapterEngine.Route.ANALYSIS_REQUIRED,AdapterEngine.select(report,bundle,null).route);
-            report=report("another.native.app","original");report.getJSONObject("matrix").getJSONArray("libraries").getJSONObject(0).put("sha256","unknown");
-            assertEquals(AdapterEngine.Route.ANALYSIS_REQUIRED,AdapterEngine.select(report,bundle,null).route);
-        } finally {Portable.deleteTree(dir);}
+    @Test public void selectionRanksPriorityPackageAndVersionWithoutProfileNames() throws Exception {
+        JSONObject input=report("example.target","original");
+        var generic=candidate("wildcard","*",0,null,0);
+        var packageFallback=candidate("package-fallback","example.target",10,null,0);
+        var exactVersion=candidate("versioned","example.target",10,"original",10703);
+        var higherPriority=candidate("higher","example.target",20,"older",10702);
+        assertEquals("higher",AdapterEngine.select(input,null,List.of(generic,exactVersion,higherPriority)).profileId);
+        assertEquals("versioned",AdapterEngine.select(input,null,List.of(generic,packageFallback,exactVersion)).profileId);
+        assertEquals("versioned",AdapterEngine.select(report("example.target","changed"),null,
+            List.of(generic,exactVersion)).profileId);
+        assertEquals("wildcard",AdapterEngine.select(report("other.app","changed"),null,List.of(generic)).profileId);
+        assertFalse(AdapterEngine.select(report("other.app","changed"),null,List.of(generic)).profileExact);
+        assertEquals("package-fallback",AdapterEngine.select(input,null,
+            List.of(candidate("same-score","example.target",10,null,0),packageFallback)).profileId);
     }
     @Test public void bundleTamperAndPathEscapeFailBeforeAdaptation() throws Exception {
         Path dir=Files.createTempDirectory("matrix-bundle-");try {
@@ -84,10 +98,10 @@ public class RouteTest {
     @Test public void inspectionExposesMatrixDetectionAndAndroidLongVersionCode() throws Exception {
         JSONObject input=report("ordinary.app","hash");input.getJSONObject("manifest").put("versionCode",-1).put("versionCodeMajor",2);
         input.getJSONObject("matrix").put("detected",false);
-        var ordinary=AdapterEngine.select(input,null,null);
+        var ordinary=AdapterEngine.select(input,null,List.of());
         assertFalse(ordinary.matrixDetected);assertEquals((2L<<32)|0xffffffffL,ordinary.versionCode);
         input.getJSONObject("matrix").put("detected",true);
-        var dependency=AdapterEngine.select(input,null,null);
+        var dependency=AdapterEngine.select(input,null,List.of());
         assertTrue(dependency.matrixDetected);assertEquals(AdapterEngine.Route.ANALYSIS_REQUIRED,dependency.route);
     }
     @Test public void targetLookupUsesSelectedImplementation() {

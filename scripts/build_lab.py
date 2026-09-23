@@ -25,17 +25,19 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--lab', required=True, type=Path)
     parser.add_argument('--bundle', required=True, type=Path)
-    parser.add_argument('--profile', required=True, type=Path, help='signed profile APK')
+    parser.add_argument('--profiles-dir', required=True, type=Path, help='directory of signed matrix-profile-<key>.apk files')
     args = parser.parse_args()
     android = args.lab.resolve(strict=True) / 'apps/android'
     bundle = args.bundle.resolve(strict=True)
-    profile = args.profile.resolve(strict=True)
+    profiles_dir = args.profiles_dir.resolve(strict=True)
+    profiles = sorted(p for p in profiles_dir.iterdir() if p.is_file() and re.fullmatch(r'matrix-profile-[a-z][a-z0-9_]{0,63}\.apk',p.name))
+    if not profiles:raise ValueError('No signed profiles found')
     manifest = (bundle / 'bundle.json').read_bytes()
     if json.loads(manifest)['schema'] != 1:
         raise ValueError('Unsupported bundle schema')
     subprocess.run([str(android / 'gradlew'), ':app:testDebugUnitTest', ':app:assembleDebug',
                     f'-PmatrixBridgeDir={ROOT}', f'-PmatrixBundleDir={bundle}',
-                    f'-PmatrixProfileApk={profile}', '--console=plain'],
+                    f'-PmatrixProfileDir={profiles_dir}', '--console=plain'],
                    cwd=android, check=True)
     apk = android / 'app/build/outputs/apk/debug/app-debug.apk'
     with zipfile.ZipFile(apk) as output:
@@ -45,13 +47,17 @@ def main():
             data = output.read('assets/matrix-bridge/' + name)
             if len(data) != expected['bytes'] or hashlib.sha256(data).hexdigest() != expected['sha256']:
                 raise ValueError('Packaged bundle member differs: ' + name)
-        if output.read('assets/matrix-profile-vd.apk') != profile.read_bytes():
-            raise ValueError('Packaged profile differs from the signed profile APK')
+        packaged={name.removeprefix('assets/') for name in output.namelist() if re.fullmatch(r'assets/matrix-profile-[a-z][a-z0-9_]{0,63}\.apk',name)}
+        if packaged!={p.name for p in profiles}:raise ValueError('Packaged profile set differs from requested profiles')
+        for profile in profiles:
+            if output.read('assets/'+profile.name)!=profile.read_bytes():
+                raise ValueError('Packaged profile differs: '+profile.name)
     signer_hash=signer(apk)
-    if signer(profile)!=signer_hash:
-        raise ValueError('Profile and Lab APK signing certificates differ')
+    for profile in profiles:
+        if signer(profile)!=signer_hash:
+            raise ValueError('Profile and Lab APK signing certificates differ: '+profile.name)
     print(json.dumps({'apk': str(apk), 'bundleSha256': hashlib.sha256(manifest).hexdigest(),
-                      'profileSha256': hashlib.sha256(profile.read_bytes()).hexdigest(),
+                      'profileSha256': {p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in profiles},
                       'signerSha256': signer_hash,
                       'installed': False, 'published': False}))
 

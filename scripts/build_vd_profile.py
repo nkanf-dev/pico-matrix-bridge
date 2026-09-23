@@ -12,6 +12,7 @@ from pathlib import Path
 import shutil
 import subprocess
 from datetime import datetime, timezone
+from profile_registry import load
 
 ROOT=Path(__file__).resolve().parents[1]
 
@@ -45,10 +46,14 @@ def main():
         else:
             from compile_vd_profile import compile_recipe
             recipe=compile_recipe(args.client,json.loads(args.profile_source.read_text()))
-        if recipe['schema']!=1 or recipe['profile']['package']!='VirtualDesktop.Android':raise ValueError('Wrong VD recipe')
+        definition=load('vd')
+        if recipe['schema']!=1 or recipe['profile']['package']!=definition['packageMatcher']:raise ValueError('Wrong VD recipe')
         recipe['profileApi']=1
         recipe['entryClass']='org.picomatrix.bridge.adapter.VdProfile'
-        recipe['profile']['profileKey']='vd'
+        recipe['profile']['profileKey']=definition['profileKey']
+        recipe['profile']['packageMatcher']=definition['packageMatcher']
+        recipe['profile']['priority']=definition['priority']
+        recipe['profile']['profileVersionCode']=version_code
         recipe['profileVersionUtc']=version_name
         recipe['profileVersionCode']=version_code
         prepared=output/'profile.json'

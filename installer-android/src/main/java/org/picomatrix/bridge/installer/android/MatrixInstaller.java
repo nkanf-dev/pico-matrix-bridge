@@ -35,15 +35,15 @@ public final class MatrixInstaller {
     private InstallationStatus progress(String id,String stage,String pkg,String code) {
         InstallationStatus status=new InstallationStatus(id,stage,pkg,code);emit(status);return status;
     }
-    public InstallationStatus prepareAndInstall(File original,File bundle,ApplicationProfile profile) throws Exception {
-        return prepareAndInstallInternal(original,bundle,null,profile);
+    public InstallationStatus prepareAndInstall(File original,File bundle,List<ApplicationProfile> profiles) throws Exception {
+        return prepareAndInstallInternal(original,bundle,null,profiles);
     }
-    public InstallationStatus prepareAndInstall(File original,File bundle,Mode mode,ApplicationProfile profile) throws Exception {
-        return prepareAndInstallInternal(original,bundle,Objects.requireNonNull(mode,"mode"),profile);
+    public InstallationStatus prepareAndInstall(File original,File bundle,Mode mode,List<ApplicationProfile> profiles) throws Exception {
+        return prepareAndInstallInternal(original,bundle,Objects.requireNonNull(mode,"mode"),profiles);
     }
     static boolean shouldAdapt(Mode mode,AdapterEngine.Route route) throws IOException {
         if(mode==Mode.ORIGINAL)return false;
-        if(route==AdapterEngine.Route.PROFILE || route==AdapterEngine.Route.GENERIC)return true;
+        if(route==AdapterEngine.Route.PROFILE)return true;
         if(mode==Mode.ADAPTED)throw new IOException("adaptation_unavailable");
         if(route==AdapterEngine.Route.ANALYSIS_REQUIRED)throw new IOException("application_update_required");
         if(route==AdapterEngine.Route.PASSTHROUGH)return false;
@@ -53,7 +53,7 @@ public final class MatrixInstaller {
         return !"original".equals(record.optString("mode")) && !"update".equals(record.optString("operation"))
             && record.optLong("previousUpdate",0)==0 && !record.optString("appId").isEmpty();
     }
-    private InstallationStatus prepareAndInstallInternal(File original,File bundle,Mode mode,ApplicationProfile profile) throws Exception {
+    private InstallationStatus prepareAndInstallInternal(File original,File bundle,Mode mode,List<ApplicationProfile> profiles) throws Exception {
         if(!PREPARING.compareAndSet(false,true)) throw new IllegalStateException("installation_busy");
         String id=UUID.randomUUID().toString();File work=null;
         try {
@@ -65,7 +65,7 @@ public final class MatrixInstaller {
             if(!originalHash.equals(LocalSigner.hash(original))) throw new SecurityException("preparation_changed");
             AdapterEngine.Inspection inspection=null;
             if(mode!=Mode.ORIGINAL) {
-                inspection=AdapterEngine.inspect(original.toPath(),bundle.toPath(),profile);
+                inspection=AdapterEngine.inspect(original.toPath(),bundle.toPath(),profiles);
                 if(!originalHash.equals(inspection.inputSha256)) throw new SecurityException("preparation_changed");
             }
             boolean adapted=shouldAdapt(mode,inspection==null?null:inspection.route);
@@ -79,7 +79,7 @@ public final class MatrixInstaller {
                 KeyStore.PrivateKeyEntry key=LocalSigner.identity();
                 File unsigned=new File(work,"unsigned.apk"),signed=new File(work,"prepared.apk");
                 AdapterEngine.Result prepared=AdapterEngine.prepare(original.toPath(),bundle.toPath(),unsigned.toPath(),
-                    key.getCertificate().getEncoded(),context.getPackageName(),LocalSigner.installedSigner(context,context.getPackageName()),profile);
+                    key.getCertificate().getEncoded(),context.getPackageName(),LocalSigner.installedSigner(context,context.getPackageName()),profiles);
                 if(!originalHash.equals(prepared.inputSha256)) throw new SecurityException("preparation_changed");
                 if(!prepared.requiresSigning || !prepared.output.toFile().getCanonicalFile().equals(unsigned.getCanonicalFile()))
                     throw new SecurityException("preparation_contract_failed");
@@ -98,7 +98,7 @@ public final class MatrixInstaller {
                 previousUpdate=installed.lastUpdateTime;
                 if(!signer.equals(LocalSigner.installedSigner(context,info.packageName)))
                     throw new SecurityException("existing_signature_conflict");
-                if("generic-native-matrix-v1".equals(profileId) && !sameGenericOrigin(
+                if(adapted && !sameAdaptedOrigin(
                         embeddedConfig(new File(installed.applicationInfo.sourceDir)),inspection.packageName,appId))
                     throw new SecurityException("existing_signature_conflict");
                 if(installed.getLongVersionCode()>info.getLongVersionCode()) throw new SecurityException("application_downgrade");
@@ -203,7 +203,7 @@ public final class MatrixInstaller {
         return version==record.getLong("version") && signer.equals(record.getString("signerSha256")) &&
             apkHash.equals(record.getString("apkSha256"));
     }
-    static boolean sameGenericOrigin(JSONObject config,String originalPackage,String appId) {
+    static boolean sameAdaptedOrigin(JSONObject config,String originalPackage,String appId) {
         return originalPackage.equals(config.optString("originalPackage")) && appId.equals(config.optString("appId"));
     }
     private static JSONObject embeddedConfig(File apk) throws Exception {
