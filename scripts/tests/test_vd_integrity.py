@@ -1,6 +1,7 @@
 """Opt-in regression against the retained, licensed research sample.
 
 VD_RESEARCH_ROOT points to matrix/analysis/vd-static-2026-09-22.
+MATRIX_VD_PROFILE and MATRIX_VD_APK select a different pinned sample.
 The sample is never copied into the repository or loaded as executable code.
 """
 import importlib.util
@@ -21,11 +22,12 @@ class IntegrityRegression(unittest.TestCase):
         adapter = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(adapter)
         cls.research = Path(os.environ['VD_RESEARCH_ROOT'])
-        cls.profile = json.loads((ROOT/'profiles/vd/client-1.34.22.0-research.json').read_text())
+        cls.profile = json.loads(Path(os.environ.get('MATRIX_VD_PROFILE',ROOT/'profiles/vd/client-1.34.22.0-research.json')).read_text())
         cls.rule = cls.profile['managedLoaderIntegrity']
         cls.image = (cls.research/'managed'/cls.rule['assembly']).read_bytes()
         import zipfile
-        with zipfile.ZipFile(cls.research.parents[1]/'artifacts/virtual-desktop-pico-1.34.22.0.apk') as apk:
+        cls.apk = Path(os.environ.get('MATRIX_VD_APK',cls.research.parents[1]/'artifacts/virtual-desktop-pico-1.34.22.0.apk'))
+        with zipfile.ZipFile(cls.apk) as apk:
             cls.loader = apk.read(cls.rule['library'])
             cls.store = apk.read(cls.profile['managedSigner']['entry'])
         cls.routed = adapter.route_loader(cls.loader, cls.profile['libraries'][cls.rule['library']],cls.profile['outputPackage'])
@@ -87,7 +89,7 @@ class IntegrityRegression(unittest.TestCase):
         from elftools.elf.elffile import ELFFile
         import io
         rule = self.profile['aotSignerHashes']
-        with zipfile.ZipFile(self.research.parents[1]/'artifacts/virtual-desktop-pico-1.34.22.0.apk') as apk:
+        with zipfile.ZipFile(self.apk) as apk:
             aot = apk.read(rule['entry'])
         actual = (self.research/'adapted-signer.der').read_bytes()
         patched, receipt = adapter.patch_aot_signer_hashes(aot, actual, rule)
@@ -112,7 +114,7 @@ class IntegrityRegression(unittest.TestCase):
         self.assertEqual(unchanged,aot)
         with self.assertRaises(ValueError):
             adapter.patch_aot_signer_hashes(aot+b'\0',actual,rule)
-        shifted=json.loads(json.dumps(rule));shifted['comparisons'][0]['low']='0x99ef0'
+        shifted=json.loads(json.dumps(rule));shifted['comparisons'][0]['low']=hex(int(rule['comparisons'][0]['low'],16)-4)
         with self.assertRaises(ValueError):
             adapter.patch_aot_signer_hashes(aot,actual,shifted)
 

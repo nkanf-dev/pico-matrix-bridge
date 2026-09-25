@@ -26,7 +26,7 @@ def main():
     source=parser.add_mutually_exclusive_group()
     source.add_argument('--recipe',type=Path)
     source.add_argument('--client',type=Path)
-    parser.add_argument('--profile-source',type=Path,default=ROOT/'profiles/vd/client-1.34.22.0-research.json')
+    parser.add_argument('--profile-source',type=Path,default=ROOT/'profiles/vd/client-1.34.22.0-10709-research.json')
     parser.add_argument('--output',required=True,type=Path)
     parser.add_argument('--variant',choices=['debug','release'],default='debug')
     parser.add_argument('--development-profile-certificate',type=Path,

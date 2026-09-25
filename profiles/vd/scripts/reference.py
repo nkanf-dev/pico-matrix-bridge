@@ -364,7 +364,7 @@ def patch_store(blob, certificate, rule, loader_rule, original_loader, routed_lo
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('input', type=Path)
-    parser.add_argument('--profile', type=Path, default=ROOT / 'profiles/vd/client-1.34.22.0-research.json')
+    parser.add_argument('--profile', type=Path, default=ROOT / 'profiles/vd/client-1.34.22.0-10709-research.json')
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--build-tools', required=True, type=Path)
     parser.add_argument('--research-debug-key', action='store_true', required=True)

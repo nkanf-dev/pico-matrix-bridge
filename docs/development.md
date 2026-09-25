@@ -16,8 +16,8 @@
 
 ```sh
 ./gradlew :tools:installDist :runtime:assembleRelease :embedded-bootstrap:assembleRelease
-uv run scripts/build_bundle.py --matrix /absolute/research/artifacts/pico-global-matrix-6.3.4.apk --client /absolute/research/artifacts/virtual-desktop-pico-1.34.22.0.apk --output /absolute/research/analysis/build-001/compatibility-bundle
-uv run profiles/vd/scripts/build.py --client /absolute/research/artifacts/virtual-desktop-pico-1.34.22.0.apk --output /absolute/research/analysis/build-001/profile-vd
+uv run scripts/build_bundle.py --matrix /absolute/research/artifacts/pico-global-matrix-6.3.4.apk --client /absolute/research/artifacts/VirtualDesktop.Android-10709.apk --output /absolute/research/analysis/build-001/compatibility-bundle
+uv run profiles/vd/scripts/build.py --client /absolute/research/artifacts/VirtualDesktop.Android-10709.apk --output /absolute/research/analysis/build-001/profile-vd
 python3 scripts/build_profile.py --key generic --output /absolute/research/analysis/build-001/profile-generic
 mkdir -p /absolute/research/analysis/build-001/profiles
 cp /absolute/research/analysis/build-001/profile-{vd,generic}/matrix-profile-*.apk /absolute/research/analysis/build-001/profiles/
@@ -25,6 +25,8 @@ python3 scripts/build_lab.py --lab /absolute/source/pico-store --bundle /absolut
 ```
 
 bundle 默认使用 release runtime，不包含应用 recipe、诊断探针、账号或签名私钥。它包含供应代码，只在本地研究目录保存；不要提交 Git 或上传 CI artifact。每个 profile APK 包含自己的适配代码和 recipe；发布版由独立的 profile 发布密钥签名，使用 `PICO_PROFILE_KEYSTORE`、`PICO_PROFILE_KEY_ALIAS`、`PICO_PROFILE_STORE_PASSWORD`、`PICO_PROFILE_KEY_PASSWORD`。profile 版本使用构建时的 UTC 秒：APK versionCode 为 Unix 秒，versionName 和内嵌元数据为 ISO UTC 时间。重现构建可指定 `--built-at 2026-09-23T12:34:56Z`。贡献者可用自己的密钥构建，并用 `--development-profile-certificate` 验证本地 APK 和 Lab 集成构建。
+
+VD 当前默认配方对应 `1.34.22.0` / versionCode `10709`，来源为 `profiles/vd/client-1.34.22.0-10709-research.json`。版本名相同不代表 APK 相同；编译器按完整 SHA-256 和内部锚点校验。旧版 `10703` 的来源文件仍保留，重建时通过 `--profile-source profiles/vd/client-1.34.22.0-research.json` 显式选择。
 
 `build_lab.py` 编译并检查 Lab 集成版，不安装设备。对应原始 Gradle 命令：
 
@@ -41,7 +43,9 @@ cd /absolute/source/pico-store/apps/android
 
 ```sh
 VD_RESEARCH_ROOT=/absolute/research/analysis/vd-static-2026-09-22 python3 -m unittest discover -s scripts/tests -p test_vd_integrity.py -v
-MATRIX_PORTABLE_RESEARCH=/absolute/research/analysis/build-001/differential MATRIX_VD_APK=/absolute/research/artifacts/virtual-desktop-pico-1.34.22.0.apk MATRIX_TEST_CERT=/absolute/research/analysis/target-public-cert.der python3 -m unittest discover -s scripts/tests -p test_portable_profile.py -v
+MATRIX_PORTABLE_RESEARCH=/absolute/research/analysis/build-001/differential MATRIX_VD_APK=/absolute/research/artifacts/VirtualDesktop.Android-10709.apk MATRIX_TEST_CERT=/absolute/research/analysis/target-public-cert.der python3 -m unittest discover -s scripts/tests -p test_portable_profile.py -v
 ```
 
 第二组逐项对照 Python 研究适配和可移植引擎：185 个托管程序集、SDK loader 与 AOT 镜像。只需要公开证书，不读取私钥。完整 APK 的签名与对齐可以使用 Android SDK 的 `apksigner verify` 和 `zipalign -c -P 16 4` 检查。
+
+两组回归均支持 `MATRIX_VD_PROFILE=/absolute/source/profile.json` 和 `MATRIX_VD_APK=/absolute/sample.apk`，可以复用已有样本切换构建号，无需复制 APK。第一组的 `VD_RESEARCH_ROOT` 目录需包含目标程序集 `managed/*.dll` 和测试用公开证书 `adapted-signer.der`。

@@ -2,6 +2,7 @@
 
 Set MATRIX_PORTABLE_RESEARCH to a durable output directory, MATRIX_VD_APK to the
 pinned original, and MATRIX_TEST_CERT to the public DER certificate. No key is read.
+MATRIX_VD_PROFILE selects another pinned source profile for version regressions.
 """
 import io
 import json
@@ -25,7 +26,10 @@ class PortableProfileRegression(unittest.TestCase):
         cls.source=reference
         cls.apk=Path(os.environ['MATRIX_VD_APK']);cls.certificate=Path(os.environ['MATRIX_TEST_CERT']).read_bytes()
         cls.work=Path(os.environ['MATRIX_PORTABLE_RESEARCH']);cls.work.mkdir(parents=True,exist_ok=True)
-        cls.profile=json.loads((ROOT/'profiles/vd/client-1.34.22.0-research.json').read_text())
+        current_profile=ROOT/'profiles/vd/client-1.34.22.0-10709-research.json'
+        profile_path=Path(os.environ.get('MATRIX_VD_PROFILE',current_profile))
+        cls.current_profile=profile_path.resolve()==current_profile.resolve()
+        cls.profile=json.loads(profile_path.read_text())
         cls.recipe=compile_recipe(cls.apk,cls.profile)
         cls.recipe_path=cls.work/'vd-recipe.json';cls.recipe_path.write_text(json.dumps(cls.recipe,indent=2)+'\n')
         subprocess.run([str(ROOT/'tools/build/install/tools/bin/tools'),'apply-vd-recipe',str(cls.apk),str(cls.recipe_path),os.environ['MATRIX_TEST_CERT'],str(cls.work/'java')],check=True)
@@ -39,6 +43,15 @@ class PortableProfileRegression(unittest.TestCase):
         expected_aot,_=self.source.patch_aot_signer_hashes(aot,self.certificate,p['aotSignerHashes'])
         self.assertEqual(expected_loader,(self.work/'java/loader.so').read_bytes())
         self.assertEqual(expected_aot,(self.work/'java/mobile-aot.so').read_bytes())
+
+    def test_shipped_recipe_matches_current_sample_compilation(self):
+        shipped=json.loads((ROOT/'profiles/vd/recipe.json').read_text())
+        if not self.current_profile:
+            self.skipTest('historical sample; shipped recipe targets the current build')
+        for key in ('store','aot'):
+            self.assertEqual(self.recipe[key],shipped[key])
+        for key,value in self.recipe['profile'].items():
+            with self.subTest(field=key):self.assertEqual(value,shipped['profile'][key])
 
     @staticmethod
     def assemblies(blob):
