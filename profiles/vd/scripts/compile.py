@@ -111,7 +111,10 @@ def compile_recipe(apk, profile):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('input',type=Path);p.add_argument('--output',required=True,type=Path)
-    p.add_argument('--profile',type=Path,default=source.ROOT/'profiles/vd/client-1.34.22.0-10709-research.json');a=p.parse_args()
+    p.add_argument('--profile',type=Path,default=None);a=p.parse_args()
+    if a.profile is None:
+        current=json.loads((source.ROOT/'profiles/vd/recipe.json').read_text())['profile']
+        a.profile=source.ROOT/'profiles/vd'/f"client-{current['appVersion']}-{current['versionCode']}-research.json"
     recipe=compile_recipe(a.input,json.loads(a.profile.read_text()))
     a.output.parent.mkdir(parents=True,exist_ok=True);a.output.write_text(json.dumps(recipe,indent=2)+'\n')
     print(json.dumps({'recipe':str(a.output),'sha256':source.file_digest(a.output),'assemblies':len(recipe['store']['assemblies'])}))

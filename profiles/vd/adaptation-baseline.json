@@ -1,0 +1,68 @@
+{
+  "schema": 1,
+  "inputSha256": "d21de6f5224d3993c035325acb011818870eb7306cc75c9980af845365aa17a2",
+  "apkMd5": "c2677ac39fcaa3c8785cc0cba859cfea",
+  "apkBytes": 1115792364,
+  "profileSha256": "efb9a39db5910db33be4b356b20a842d78b2d45041dcff98efd0912be5e2cb10",
+  "assemblyCount": 185,
+  "stableEntries": {
+    "classes.dex": "82b2aa698b273aab9be58655e0315cce55d1a1db5177830e51a5c93852fc7db9",
+    "resources.arsc": "1bece49a935178130249144ff5601596e94a8adf0df82459d59b0663c690c0b7"
+  },
+  "gates": [
+    {
+      "assembly": "VirtualDesktop.Android.dll",
+      "type": "VirtualDesktop.VrApp",
+      "method": "OnCreate",
+      "sha256": "dd778f43753c06f53868f5ecf5b7150945460d474d66ccaee53b7af74d1a6d3d",
+      "token": "0x06000018",
+      "instructionCount": 127
+    },
+    {
+      "assembly": "Pico.Platform.dll",
+      "type": "Pico.Platform.PlatformInitialize",
+      "method": ".ctor",
+      "sha256": "8b96a8925a8d4aee7221f7e51f70b55dfea636696a05fdf94b5020d001b388a1",
+      "token": "0x06000027",
+      "instructionCount": 57
+    },
+    {
+      "assembly": "VirtualDesktop.Mobile.dll",
+      "type": "VirtualDesktop.Mobile.InputSystem",
+      "method": ".ctor",
+      "sha256": "ba0ad962507c9082be713b62102afd111543e3edd1a8e3973b750074ffba395c",
+      "token": "0x060002b3",
+      "instructionCount": 48
+    },
+    {
+      "assembly": "VirtualDesktop.Mobile.dll",
+      "type": "VirtualDesktop.Mobile.Keyboard",
+      "method": ".ctor",
+      "sha256": "3eb02479cca9a6fa30ee5877459c721e44620bc63a124d9a94c4f5ff76f28ca1",
+      "token": "0x060002b6",
+      "instructionCount": 109
+    },
+    {
+      "assembly": "VirtualDesktop.Mobile.dll",
+      "type": "VirtualDesktop.Mobile.UserSettings",
+      "method": "<GetHasValidIdentityAsync>b__474_0",
+      "sha256": "e60c71a2798db1b327ac4258d5d6cc61b185c8d891d464540796bdf2d04166d9",
+      "token": "0x060007c8",
+      "instructionCount": 24
+    }
+  ],
+  "native": [
+    {
+      "method": "InputSystem::.ctor",
+      "contextSha256": "f10978af0d3be376a9d22be5d4e2ab8cec348fa10358c2a59760d2e38bc1e086"
+    },
+    {
+      "method": "Keyboard::.ctor",
+      "contextSha256": "0dd2f7fef6f5766ad31b82618d840b35650357c21392a1cedfa6b1abcb9d93ae"
+    },
+    {
+      "method": "UserSettings::<GetHasValidIdentityAsync>b__474_0",
+      "contextSha256": "f5058ac86e9a20d990ebc69b1586a4bc893f829bceba968eabea166294dc35cd"
+    }
+  ]
+}

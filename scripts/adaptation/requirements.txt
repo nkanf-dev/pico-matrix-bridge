@@ -1,0 +1,6 @@
+dnfile==0.18.0
+dncil==1.0.2
+lz4==4.4.5
+pyelftools==0.33
+capstone==5.0.7
+pico-store-lab==0.2.0
