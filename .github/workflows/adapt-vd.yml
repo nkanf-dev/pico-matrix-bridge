@@ -92,7 +92,8 @@ jobs:
       - name: Install pinned analysis tools
         run: |
           python -m pip install -r scripts/adaptation/requirements.txt
-          npm ci --ignore-scripts --omit=optional --prefix scripts/adaptation/runtime
+          npm ci --ignore-scripts --prefix scripts/adaptation/runtime
+          scripts/adaptation/runtime/node_modules/.bin/omp --version
           echo "$PWD/scripts/adaptation/runtime/node_modules/.bin" >> "$GITHUB_PATH"
       - name: Check trusted code
         run: |
