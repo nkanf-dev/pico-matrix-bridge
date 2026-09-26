@@ -42,6 +42,17 @@ describe('bounded evidence tools', () => {
       await expect(f.tools.submit_candidate.execute('3', value)).rejects.toThrow('Invalid submission');
     } finally { rmSync(f.work, { recursive: true }); }
   });
+  test('invented addresses and callback names cannot become evidence', async () => {
+    const f = fixture();
+    try {
+      const value = { disposition: 'equivalent', rationale: 'candidate', evidenceIds: ['gate'],
+        anchors: [{ method: 'fake', low: '0x1000', high: '0x1004', compare: '0x1008' }] };
+      await expect(f.tools.submit_candidate.execute('1', value)).rejects.toThrow('not supplied');
+      await expect(f.tools.submit_candidate.execute('2', { ...value, anchors: [], managedMappings: [
+        { oldMethod: 'missing', newMethod: 'invented' }] })).rejects.toThrow('unique supplied');
+      expect(existsSync(f.output)).toBe(false);
+    } finally { rmSync(f.work, { recursive: true }); }
+  });
   test('fixed tool budget', async () => {
     const f = fixture();
     try {

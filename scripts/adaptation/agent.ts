@@ -31,11 +31,22 @@ export default function (pi: ExtensionAPI) {
       evidenceIds: z.array(z.string().max(100)).min(1).max(12),
       managedMappings: z.array(z.object({ oldMethod: z.string().max(180), newMethod: z.string().max(180) })).max(1).default(() => []),
       anchors: z.array(z.object({ method: z.string().max(180), low: z.string().regex(/^0x[0-9a-f]{1,16}$/),
-        high: z.string().regex(/^0x[0-9a-f]{1,16}$/), compare: z.string().regex(/^0x[0-9a-f]{1,16}$/) })).max(3),
+        high: z.string().regex(/^0x[0-9a-f]{1,16}$/), compare: z.string().regex(/^0x[0-9a-f]{1,16}$/) })).max(3).describe('Exact native addresses from supplied native candidates only. Use [] for managed renames or absent native evidence. Never encode a hash as an address.'),
     }),
     async execute(_id, params) {
       budget();
       if (submitted || params.evidenceIds.some(id => !Object.hasOwn(evidence, id))) throw new Error('Invalid submission');
+      if (params.anchors.some(anchor => !(evidence.native ?? []).some((group: any) =>
+        group.method === anchor.method && group.candidates.some((candidate: any) =>
+          ['low', 'high', 'compare'].every(field => candidate[field] === anchor[field]))))) {
+        throw new Error('Anchor was not supplied as native evidence. Use [] when only mapping managed names.');
+      }
+      if ((params.managedMappings ?? []).some(mapping => !(evidence['callback-mapping'] ?? []).some((group: any) =>
+        group.oldMethod === mapping.oldMethod && group.candidates.filter((candidate: any) =>
+          candidate.sha256 === group.expectedSha256).length === 1 && group.candidates.some((candidate: any) =>
+          candidate.method === mapping.newMethod && candidate.sha256 === group.expectedSha256)))) {
+        throw new Error('Managed mapping must name the unique supplied matching fingerprint.');
+      }
       writeFileSync(output + '.pending', JSON.stringify({ schema: 1, ...params, toolCalls: calls }) + '\n', { flag: 'wx', mode: 0o600 });
       renameSync(output + '.pending', output);
       submitted = true;
