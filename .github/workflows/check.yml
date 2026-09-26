@@ -29,6 +29,6 @@ jobs:
       - name: Check adaptation boundaries
         run: |
           python -m pip install -r scripts/adaptation/requirements.txt
-          npm ci --omit=optional --prefix scripts/adaptation/runtime
+          npm ci --ignore-scripts --omit=optional --prefix scripts/adaptation/runtime
           bun test scripts/adaptation/agent.test.ts
       - run: ./scripts/verify.sh
