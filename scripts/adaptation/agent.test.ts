@@ -3,6 +3,9 @@ import { mkdtempSync, writeFileSync, rmSync, existsSync, readFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import register from './agent';
+import { createRequire } from 'node:module';
+const runtimeRequire = createRequire(new URL('./runtime/package.json', import.meta.url));
+const { z } = await import(runtimeRequire.resolve('@oh-my-pi/omptype/zod'));
 
 // Exercise trusted tool handlers without a provider, key or application binary.
 function fixture() {
@@ -11,8 +14,7 @@ function fixture() {
   process.env.VD_AGENT_OUTPUT = join(work, 'candidate.json');
   writeFileSync(process.env.VD_AGENT_EVIDENCE, JSON.stringify({ index: ['gate'], gate: { changed: true } }));
   const tools: Record<string, any> = {};
-  const schema: any = new Proxy(() => schema, { get: () => schema, apply: () => schema });
-  register({ zod: schema, on() {}, registerTool(tool: any) { tools[tool.name] = tool; } } as any);
+  register({ zod: z, on() {}, registerTool(tool: any) { tools[tool.name] = tool; } } as any);
   return { work, tools, output: process.env.VD_AGENT_OUTPUT };
 }
 

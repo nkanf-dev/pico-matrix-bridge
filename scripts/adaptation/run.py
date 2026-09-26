@@ -84,7 +84,7 @@ def diagnostic(apk, profile, proof, reason):
     result = {'index': {'ids': ['failure', 'baseline'], 'purpose': 'Read evidence, diagnose uncertainty; do not bypass checks'},
               'failure': {'reason': reason}, 'baseline': proof}
     try:
-        _, _, _, aot, _, gates, _ = sample(apk, profile)
+        _, _, _, aot, _, gates, _ = sample(apk, profile, tolerate_missing=True)
         result['managed'] = gates
         code, base = text_section(aot)
         native = []
@@ -93,6 +93,13 @@ def diagnostic(apk, profile, proof, reason):
             native.append({'method': rule['method'], 'candidates': [dict(c, context=native_context(code, base, int(c['low'], 16))) for c in found[:8]]})
         result['native'] = native
         result['index']['ids'] += ['managed', 'native']
+        missing = [g for g in gates if g.get('missing') and g.get('candidates')]
+        if missing:
+            result['callback-mapping'] = [{
+                'oldMethod': g['method'], 'type': g['type'],
+                'expectedSha256': next(b['sha256'] for b in proof['gates'] if b['type'] == g['type'] and b['method'] == g['method']),
+                'candidates': g['candidates']} for g in missing]
+            result['index'] = {'ids': ['callback-mapping'], 'task': 'Propose managedMappings only for a unique equal fingerprint. The trusted validator will recheck all native and managed gates independently.'}
     except Exception:
         result['failure']['extraction'] = 'Partial evidence only; do not infer equivalence'
     return result
@@ -167,16 +174,29 @@ def main():
             proposed, recipe = derive(apk, profile, proof, version, name)
         except ValueError as error:
             report.update(state='review-required', reason=str(error))
+            accepted = False
             if os.environ.get('MIKUMIKU_API_KEY'):
                 report['agentUsed'] = True
                 report['agent'] = run_agent(diagnostic(apk, profile, proof, str(error)), args.work / 'agent')
-            raise RuntimeError('Build requires review; the current profile remains unchanged') from None
-        if args.force_agent:
+                mappings = report['agent'].get('managedMappings', [])
+                if mappings:
+                    try:
+                        # The model's disposition and raw addresses confer no authority.
+                        proposed, recipe = derive(apk, profile, proof, version, name, mappings)
+                        accepted = True
+                        report.update(state='analyzing', agentMappingVerified=True)
+                        report.pop('reason', None)
+                    except ValueError:
+                        report['candidateRejected'] = True
+            if not accepted:
+                raise RuntimeError('Build requires review; the current profile remains unchanged') from None
+        if args.force_agent and not report['agentUsed']:
             evidence = diagnostic(apk, profile, proof, 'Deterministic validation passed; independent diagnostic replay')
             report['agentUsed'] = True
             report['agent'] = run_agent(evidence, args.work / 'agent')
             # Agent approval is not a gate. Recompute using the untouched sample and trusted rules.
             checked(derive(apk, profile, proof, version, name) == (proposed, recipe), 'Non-deterministic candidate')
+        report['state'] = 'validating'
         print('Running reference and JVM differential checks', flush=True)
         differential = verify_candidate(apk, proposed, recipe, args.work)
         next_baseline = baseline(apk, proposed)

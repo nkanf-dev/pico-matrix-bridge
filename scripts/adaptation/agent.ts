@@ -29,6 +29,7 @@ export default function (pi: ExtensionAPI) {
       disposition: z.enum(['equivalent', 'review-required']),
       rationale: z.string().min(1).max(4000),
       evidenceIds: z.array(z.string().max(100)).min(1).max(12),
+      managedMappings: z.array(z.object({ oldMethod: z.string().max(180), newMethod: z.string().max(180) })).max(1).default(() => []),
       anchors: z.array(z.object({ method: z.string().max(180), low: z.string().regex(/^0x[0-9a-f]{1,16}$/),
         high: z.string().regex(/^0x[0-9a-f]{1,16}$/), compare: z.string().regex(/^0x[0-9a-f]{1,16}$/) })).max(3),
     }),

@@ -26,6 +26,7 @@ from compile import compile_recipe, method
 
 KEYS = ('managedSigner', 'managedLoaderIntegrity', 'managedSignerHashes')
 MAX_ENTRY = 64 * 1024 * 1024
+CALLBACK = re.compile(r'^<GetHasValidIdentityAsync>b__[0-9]+_[0-9]+$')
 
 
 def checked(condition, message):
@@ -188,7 +189,17 @@ def candidates(code, base, rule):
     return matches
 
 
-def sample(apk, profile):
+def callback_candidates(image, selector):
+    """Only compiler-numbered identity callbacks, in the same declaring type."""
+    pe = dnfile.dnPE(data=image)
+    names = [str(m.row.Name) for t in pe.net.mdtables.TypeDef
+             if f'{t.TypeNamespace}.{t.TypeName}' == selector['type']
+             for m in t.MethodList if CALLBACK.fullmatch(str(m.row.Name))]
+    checked(len(names) <= 16, 'Too many identity callback candidates')
+    return [{'method': name, **managed_gate(image, dict(selector, method=name))} for name in names]
+
+
+def sample(apk, profile, tolerate_missing=False):
     with zipfile.ZipFile(apk) as archive:
         names = archive.namelist()
         checked(len(names) == len(set(names)) and len(names) < 10000, 'Duplicate or excessive APK entries')
@@ -205,8 +216,16 @@ def sample(apk, profile):
     for key in KEYS:
         rule = profile[key]
         for selector in rule.get('methods', [rule]):
-            gates.append({'assembly': rule['assembly'], 'type': selector['type'], 'method': selector['method'],
-                          **managed_gate(images[rule['assembly']], selector)})
+            gate = {'assembly': rule['assembly'], 'type': selector['type'], 'method': selector['method']}
+            try:
+                gate.update(managed_gate(images[rule['assembly']], selector))
+            except ValueError:
+                if not tolerate_missing:
+                    raise
+                gate['missing'] = True
+                if CALLBACK.fullmatch(selector['method']):
+                    gate['candidates'] = callback_candidates(images[rule['assembly']], selector)
+            gates.append(gate)
     return blob, images, loader, aot, stable, gates, len(packed)
 
 
@@ -227,10 +246,29 @@ def baseline(apk, profile):
             'assemblyCount': count, 'stableEntries': stable, 'gates': gates, 'native': native}
 
 
-def derive(apk, profile, proof, version_code, version_name):
+def derive(apk, profile, proof, version_code, version_name, renames=None):
     checked(proof['schema'] == 1 and proof['profileSha256'] == fingerprint(profile)
             and proof['inputSha256'] == profile['inputSha256'], 'Baseline does not belong to profile')
-    blob, images, loader, aot, stable, gates, count = sample(apk, profile)
+    effective = copy.deepcopy(profile)
+    checked(isinstance(renames or [], list) and len(renames or []) <= 1, 'Too many managed mappings')
+    for rename in renames or []:
+        checked(set(rename) == {'oldMethod', 'newMethod'} and CALLBACK.fullmatch(rename['oldMethod'])
+                and CALLBACK.fullmatch(rename['newMethod']) and rename['oldMethod'] != rename['newMethod'],
+                'Only compiler-numbered identity callbacks may be renamed')
+        rules = [r for r in effective['managedSignerHashes']['methods'] if r['method'] == rename['oldMethod']]
+        checked(len(rules) == 1 and rules[0]['type'] == 'VirtualDesktop.Mobile.UserSettings', 'Unknown managed mapping')
+        rules[0]['method'] = rename['newMethod']
+        original = 'UserSettings::' + rename['oldMethod']
+        native = [r for r in effective['aotSignerHashes']['comparisons'] if r['method'] == original]
+        checked(len(native) == 1, 'Managed mapping has no native counterpart')
+        native[0]['method'] = 'UserSettings::' + rename['newMethod']
+    blob, images, loader, aot, stable, gates, count = sample(apk, effective)
+    for rename in renames or []:
+        selector = next(r for r in effective['managedSignerHashes']['methods'] if r['method'] == rename['newMethod'])
+        expected = next(g for g in proof['gates'] if g['type'] == selector['type'] and g['method'] == rename['oldMethod'])
+        options = callback_candidates(images[effective['managedSignerHashes']['assembly']], selector)
+        matches = [r for r in options if r['sha256'] == expected['sha256']]
+        checked(len(matches) == 1 and matches[0]['method'] == rename['newMethod'], 'Managed mapping is changed or ambiguous')
     checked(count == proof['assemblyCount'], 'Assembly set size changed; review required')
     checked(stable == proof['stableEntries'], 'DEX/resources changed; review required')
     checked(digest(loader) == profile['libraries'][profile['managedLoaderIntegrity']['library']]['sha256'],
@@ -238,7 +276,7 @@ def derive(apk, profile, proof, version_code, version_name):
     checked(len(gates) == len(proof['gates']), 'Managed gate set changed')
     for old, new in zip(proof['gates'], gates):
         checked(old['sha256'] == new['sha256'], 'Managed gate changed: ' + new['type'] + '::' + new['method'])
-    result = copy.deepcopy(profile)
+    result = copy.deepcopy(effective)
     result.update(id=f'vd-{version_name}-{version_code}-arm64-research', versionCode=version_code,
                   appVersion=version_name, inputSha256=reference.file_digest(apk))
     result['managedSigner']['sha256'] = digest(blob)

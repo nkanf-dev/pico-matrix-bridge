@@ -26,10 +26,11 @@ class PortableProfileRegression(unittest.TestCase):
         cls.source=reference
         cls.apk=Path(os.environ['MATRIX_VD_APK']);cls.certificate=Path(os.environ['MATRIX_TEST_CERT']).read_bytes()
         cls.work=Path(os.environ['MATRIX_PORTABLE_RESEARCH']);cls.work.mkdir(parents=True,exist_ok=True)
-        current_profile=ROOT/'profiles/vd/client-1.34.22.0-10709-research.json'
+        shipped_profile=json.loads((ROOT/'profiles/vd/recipe.json').read_text())['profile']
+        current_profile=ROOT/'profiles/vd'/f"client-{shipped_profile['appVersion']}-{shipped_profile['versionCode']}-research.json"
         profile_path=Path(os.environ.get('MATRIX_VD_PROFILE',current_profile))
-        cls.current_profile=profile_path.resolve()==current_profile.resolve()
         cls.profile=json.loads(profile_path.read_text())
+        cls.current_profile=cls.profile['inputSha256']==shipped_profile['inputSha256']
         cls.recipe=compile_recipe(cls.apk,cls.profile)
         cls.recipe_path=cls.work/'vd-recipe.json';cls.recipe_path.write_text(json.dumps(cls.recipe,indent=2)+'\n')
         subprocess.run([str(ROOT/'tools/build/install/tools/bin/tools'),'apply-vd-recipe',str(cls.apk),str(cls.recipe_path),os.environ['MATRIX_TEST_CERT'],str(cls.work/'java')],check=True)

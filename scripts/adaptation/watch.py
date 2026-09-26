@@ -71,5 +71,5 @@ if __name__ == '__main__':
     try:
         main()
     except Exception as error:
-        print('Metadata observation failed: ' + type(error).__name__)
+        print('Metadata observation failed: ' + type(error).__name__ + '; check the PICO session, ownership and official service availability')
         raise SystemExit(1)

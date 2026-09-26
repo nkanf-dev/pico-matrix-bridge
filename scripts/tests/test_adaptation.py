@@ -22,6 +22,12 @@ class CommitPolicy(unittest.TestCase):
         for key in ('outputPackage', 'recipe', 'package'):
             changed = copy.deepcopy(new); changed[key] = 'untrusted'
             self.assertNotEqual(policy.invariant_profile(old), policy.invariant_profile(changed))
+        renamed = copy.deepcopy(new)
+        renamed['managedSignerHashes']['methods'][2]['method'] = '<GetHasValidIdentityAsync>b__475_0'
+        renamed['aotSignerHashes']['comparisons'][2]['method'] = 'UserSettings::<GetHasValidIdentityAsync>b__475_0'
+        self.assertEqual(policy.invariant_profile(old), policy.invariant_profile(renamed))
+        renamed['managedSignerHashes']['methods'][2]['method'] = 'AlwaysTrue'
+        self.assertNotEqual(policy.invariant_profile(old), policy.invariant_profile(renamed))
         changed = copy.deepcopy(new)
         changed['managedSignerHashes']['methods'][0]['count'] = 0
         self.assertNotEqual(policy.invariant_profile(old), policy.invariant_profile(changed))
@@ -88,6 +94,24 @@ class HistoricalReplay(unittest.TestCase):
         proof['gates'][0]['sha256'] = '0' * 64
         with self.assertRaisesRegex(ValueError, 'Managed gate changed'):
             derive(Path(os.environ['VD_REPLAY_NEW_APK']), old, proof, 10709, '1.34.22.0')
+
+    def test_compiler_callback_rename_requires_identical_unique_body(self):
+        from analysis import derive, fingerprint
+        old = json.loads((ROOT / 'profiles/vd/client-1.34.22.0-10709-research.json').read_text())
+        proof = json.loads((ROOT / 'profiles/vd/adaptation-baseline.json').read_text())
+        actual = old['managedSignerHashes']['methods'][2]['method']
+        previous = '<GetHasValidIdentityAsync>b__473_0'
+        old['managedSignerHashes']['methods'][2]['method'] = previous
+        old['aotSignerHashes']['comparisons'][2]['method'] = 'UserSettings::' + previous
+        proof['profileSha256'] = fingerprint(old)
+        proof['gates'][-1]['method'] = previous
+        proof['native'][-1]['method'] = 'UserSettings::' + previous
+        mapping = [{'oldMethod': previous, 'newMethod': actual}]
+        source, recipe = derive(Path(os.environ['VD_REPLAY_NEW_APK']), old, proof, 10709, '1.34.22.0', mapping)
+        self.assertEqual(source, json.loads((ROOT / 'profiles/vd/client-1.34.22.0-10709-research.json').read_text()))
+        mapping[0]['newMethod'] = 'AlwaysTrue'
+        with self.assertRaisesRegex(ValueError, 'Only compiler-numbered'):
+            derive(Path(os.environ['VD_REPLAY_NEW_APK']), old, proof, 10709, '1.34.22.0', mapping)
 
 
 if __name__ == '__main__':
