@@ -1,0 +1,8 @@
+{
+  "name": "vd-adaptation-agent-runtime",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "@oh-my-pi/pi-coding-agent": "18.1.17"
+  }
+}

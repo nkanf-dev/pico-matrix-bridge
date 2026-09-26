@@ -27,6 +27,8 @@ python3 scripts/matrix.py check-generated
 
 ## 3. 更新应用规则
 
+VD 的定期取样、自动重定位、模型辅助分析和签名发布由 [持续适配 CI](maintenance/vd-continuous-adaptation.md) 负责。该文档也包含手动重放、凭据续期及失败恢复方法。
+
 VD profile 固定原始 APK、程序集、方法、字符串和原生指令的身份。`profiles/vd/scripts/compile.py` 根据原始元数据定位，生成包含原始字节校验的 recipe；`profiles/vd/code` 执行完整 VD 适配，`adapter-core` 只提供通用检查、runtime 嵌入与 APK 写入。profile APK 同时装入 VD 代码和 recipe，使用本次实际目标签名证书计算替换值。比较指令、分支和无关程序集保持不变。
 
 客户端更新时，先静态定位变化，再调整 profile 并执行差分回归。Lab 可让用户对已知应用的新版本显式尝试现有 profile；整包哈希与版本差异本身不阻止尝试，但目标程序集、AOT 镜像、原生库和补丁操作数仍必须与 recipe 匹配。不匹配会在安装前失败，并保留原始下载及现有应用。通用 native Matrix 适配也由独立的 `generic` profile 提供，要求明确的应用标识、入口和 loader 身份。profile 按优先级、包名匹配精度、精确版本依次选择；`*` 通用 profile 的优先级最低。Lab 集成构建会拒绝两个 profile 使用相同的包名匹配规则和优先级。

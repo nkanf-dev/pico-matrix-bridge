@@ -8,6 +8,11 @@ on:
         required: true
         type: string
 
+      expected_sha:
+        description: Exact main commit expected by the adaptation pipeline
+        required: false
+        type: string
+
 permissions:
   contents: read
 
@@ -25,6 +30,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Bind release to the requested source
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          if [[ -n "$EXPECTED_SHA" && "$EXPECTED_SHA" != "$GITHUB_SHA" ]]; then
+            echo 'Main advanced before dispatch; retry from the latest analyzed source.' >&2
+            exit 1
+          fi
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

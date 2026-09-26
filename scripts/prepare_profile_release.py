@@ -65,6 +65,7 @@ def main():
         f'Package match: `{definition["packageMatcher"]}`  \n'
         f'Priority: `{definition["priority"]}`  \n'
         f'Source commit: `{source}`  \n'
+        f'Input APK SHA-256: `{profile.get("inputSha256", "not-pinned")}`  \n'
         f'APK SHA-256: `{digest}`\n')
     (output / 'receipt.json').write_text(json.dumps({
         'tag': tag, 'key': args.key, 'versionCode': version, 'versionName': iso,

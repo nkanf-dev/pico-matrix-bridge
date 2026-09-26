@@ -364,7 +364,7 @@ def patch_store(blob, certificate, rule, loader_rule, original_loader, routed_lo
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('input', type=Path)
-    parser.add_argument('--profile', type=Path, default=ROOT / 'profiles/vd/client-1.34.22.0-10709-research.json')
+    parser.add_argument('--profile', type=Path, default=None)
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--build-tools', required=True, type=Path)
     parser.add_argument('--research-debug-key', action='store_true', required=True)
@@ -372,6 +372,9 @@ def main():
     parser.add_argument('--matrix', type=Path, required=True)
     parser.add_argument('--provisioner-package', default='org.picomatrix.bridge')
     args = parser.parse_args()
+    if args.profile is None:
+        current=json.loads((ROOT/'profiles/vd/recipe.json').read_text())['profile']
+        args.profile=ROOT/'profiles/vd'/f"client-{current['appVersion']}-{current['versionCode']}-research.json"
     source, output = args.input.resolve(strict=True), args.output.resolve()
     checked(source != output and not output.exists(), 'output must be a new file')
     profile = json.loads(args.profile.read_text())
