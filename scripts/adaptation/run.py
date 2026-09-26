@@ -150,6 +150,7 @@ def main():
     report = {'schema': 1, 'state': 'observing', 'baseCommit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
               'previousInputSha256': profile['inputSha256'], 'agentUsed': False}
     downloaded = None
+    download_metadata = None
     try:
         apk = args.apk.resolve(strict=True) if args.apk else None
         if apk is None:
@@ -163,10 +164,13 @@ def main():
             checked(item.version_code >= profile['versionCode'], 'Store reports an older build; manual review required')
             downloaded = args.work / 'sample.apk'
             report['state'] = 'acquiring'
-            acquire(client, target, item.version_code, downloaded)
+            download_metadata = acquire(client, target, item.version_code, downloaded)
             apk = downloaded
         print('Checking APK package and publisher', flush=True)
         version, name = identity(apk, profile)
+        if download_metadata is not None:
+            checked(version == download_metadata.version_code and name == download_metadata.version,
+                    'APK manifest does not match official download metadata')
         report.update(state='analyzing', observedVersionCode=version)
         checked(version >= profile['versionCode'], 'Refusing version downgrade')
         print('Relocating checked profile operands', flush=True)

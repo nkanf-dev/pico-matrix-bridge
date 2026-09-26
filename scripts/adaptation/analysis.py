@@ -279,6 +279,8 @@ def derive(apk, profile, proof, version_code, version_name, renames=None):
     result = copy.deepcopy(effective)
     result.update(id=f'vd-{version_name}-{version_code}-arm64-research', versionCode=version_code,
                   appVersion=version_name, inputSha256=reference.file_digest(apk))
+    checked(version_code != profile['versionCode'] or result['inputSha256'] == profile['inputSha256'],
+            'Same version contains different APK bytes; review required')
     result['managedSigner']['sha256'] = digest(blob)
     for key in KEYS:
         result[key]['assemblySha256'] = digest(images[result[key]['assembly']])
