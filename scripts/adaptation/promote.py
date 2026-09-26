@@ -16,15 +16,10 @@ def command(*args):
 
 
 def published(input_sha):
-    # Existing release predates per-input provenance in release notes.
-    if input_sha == 'd21de6f5224d3993c035325acb011818870eb7306cc75c9980af845365aa17a2':
-        tag = 'vd-profile-20260926T000042Z'
-        r = json.loads(command('gh', 'api', f'repos/{os.environ["GITHUB_REPOSITORY"]}/releases/tags/{tag}'))
-        return not r['draft'] and any(a['name'] == 'matrix-profile-vd.apk' and a['state'] == 'uploaded' for a in r['assets'])
     releases = json.loads(command('gh', 'api', f'repos/{os.environ["GITHUB_REPOSITORY"]}/releases?per_page=100'))
     return any(not r['draft'] and r['tag_name'].startswith('vd-profile-') and
                f'Input APK SHA-256: `{input_sha}`' in (r.get('body') or '') and
-               any(a['name'] == 'matrix-profile-vd.apk' and a['state'] == 'uploaded' for a in r['assets']) for r in releases)
+               {'matrix-profile-vd.apk', 'SHA256SUMS'} <= {a['name'] for a in r['assets'] if a['state'] == 'uploaded'} for r in releases)
 
 
 def main():
