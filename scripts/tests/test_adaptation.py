@@ -7,11 +7,31 @@ from pathlib import Path
 import struct
 import sys
 import unittest
+from unittest.mock import patch
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'scripts/adaptation'))
 import policy
 DEPS = all(importlib.util.find_spec(m) for m in ('capstone', 'dnfile', 'dncil', 'elftools', 'lz4'))
+
+
+@unittest.skipUnless(DEPS, 'requires pinned adaptation dependencies')
+class InputIdentity(unittest.TestCase):
+    def test_identity_errors_are_specific_and_do_not_echo_tool_output(self):
+        from run import identity, InputIdentityError
+        profile = {'package': 'VirtualDesktop.Android', 'managedSigner': {'originalCertificateSha256': 'a' * 64}}
+        package = "package: name='VirtualDesktop.Android' versionCode='10709' versionName='1.34.22.0'\n"
+        certificate = 'Signer #1 certificate SHA-256 digest: ' + 'a' * 64 + '\n'
+        with patch('run.tool', side_effect=lambda name: name), patch('run.subprocess.run') as process:
+            process.side_effect = [SimpleNamespace(stdout=package), SimpleNamespace(stdout=certificate)]
+            self.assertEqual(identity(Path('sample.apk'), profile), (10709, '1.34.22.0'))
+            process.side_effect = [SimpleNamespace(stdout='untrusted input')]
+            with self.assertRaisesRegex(InputIdentityError, '^Cannot parse APK package metadata$'):
+                identity(Path('sample.apk'), profile)
+            process.side_effect = [SimpleNamespace(stdout=package), SimpleNamespace(stdout='untrusted input')]
+            with self.assertRaisesRegex(InputIdentityError, '^Cannot parse APK publisher digest$'):
+                identity(Path('sample.apk'), profile)
 
 
 class CommitPolicy(unittest.TestCase):

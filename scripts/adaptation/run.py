@@ -20,6 +20,15 @@ TARGET_ID = '3540'
 MAX_APK = 2 * 1024**3
 
 
+class InputIdentityError(ValueError):
+    """A trusted, credential-free explanation for an input identity mismatch."""
+
+
+def identity_checked(condition, message):
+    if not condition:
+        raise InputIdentityError(message)
+
+
 def dump(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + '\n')
@@ -35,12 +44,14 @@ def tool(name):
 def identity(apk, profile):
     text = subprocess.run([tool('aapt'), 'dump', 'badging', str(apk)], capture_output=True, text=True, check=True).stdout
     match = re.search(r"^package: name='([^']+)' versionCode='([0-9]+)' versionName='([^']+)'", text, re.M)
-    checked(match and match[1] == profile['package'], 'Wrong APK package')
-    checked(re.fullmatch(r'[0-9A-Za-z][0-9A-Za-z._-]{0,63}', match[3]), 'Unsupported version name')
+    identity_checked(match is not None, 'Cannot parse APK package metadata')
+    identity_checked(match[1] == profile['package'], 'Wrong APK package')
+    identity_checked(re.fullmatch(r'[0-9A-Za-z][0-9A-Za-z._-]{0,63}', match[3]), 'Unsupported version name')
     signatures = subprocess.run([tool('apksigner'), 'verify', '--print-certs', str(apk)],
                                  capture_output=True, text=True, check=True).stdout
     certificates = re.findall(r'^Signer #[0-9]+ certificate SHA-256 digest: ([0-9a-f]{64})$', signatures, re.M)
-    checked(certificates == [profile['managedSigner']['originalCertificateSha256']], 'APK publisher changed')
+    identity_checked(bool(certificates), 'Cannot parse APK publisher digest')
+    identity_checked(certificates == [profile['managedSigner']['originalCertificateSha256']], 'APK publisher changed')
     return int(match[2]), match[3]
 
 
@@ -167,10 +178,11 @@ def main():
             download_metadata = acquire(client, target, item.version_code, downloaded)
             apk = downloaded
         print('Checking APK package and publisher', flush=True)
+        report['state'] = 'identifying'
         version, name = identity(apk, profile)
         if download_metadata is not None:
-            checked(version == download_metadata.version_code and name == download_metadata.version,
-                    'APK manifest does not match official download metadata')
+            identity_checked(version == download_metadata.version_code, 'APK version code differs from official download metadata')
+            identity_checked(name == download_metadata.version, 'APK version name differs from official download metadata')
         report.update(state='analyzing', observedVersionCode=version)
         checked(version >= profile['versionCode'], 'Refusing version downgrade')
         print('Relocating checked profile operands', flush=True)
@@ -213,7 +225,8 @@ def main():
         dump(args.output / 'baseline.json', next_baseline)
     except Exception as error:
         if report['state'] != 'review-required':
-            report.update(failedStage=report['state'], state='failed', reason=type(error).__name__ + ': operation failed at named stage')
+            report.update(failedStage=report['state'], state='failed',
+                          reason=str(error) if isinstance(error, InputIdentityError) else type(error).__name__ + ': operation failed at named stage')
         raise
     finally:
         dump(args.output / 'report.json', report)
