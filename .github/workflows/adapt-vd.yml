@@ -28,7 +28,7 @@ concurrency:
 jobs:
   observe:
     if: github.ref == 'refs/heads/main' && github.repository == 'nkanf-dev/pico-matrix-bridge'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     environment: vd-adaptation
     permissions:
@@ -68,7 +68,7 @@ jobs:
   analyze:
     needs: observe
     if: needs.observe.outputs.state == 'pending'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 35
     environment: vd-adaptation
     steps:
@@ -150,7 +150,7 @@ jobs:
       (needs.analyze.result == 'success' || needs.analyze.result == 'skipped') &&
       needs.observe.outputs.state != 'review-required' &&
       (github.event_name == 'schedule' || inputs.dry_run == false)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: write

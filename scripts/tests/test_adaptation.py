@@ -18,6 +18,19 @@ DEPS = all(importlib.util.find_spec(m) for m in ('capstone', 'dnfile', 'dncil', 
 
 @unittest.skipUnless(DEPS, 'requires pinned adaptation dependencies')
 class InputIdentity(unittest.TestCase):
+    def test_tool_version_is_not_selected_from_runner_preinstalls(self):
+        import tempfile
+        from run import tool
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {'ANDROID_HOME': temp}):
+            root = Path(temp) / 'build-tools'
+            for version in ('36.0.0', '37.0.0'):
+                (root / version).mkdir(parents=True)
+                (root / version / 'apksigner').touch()
+            self.assertEqual(tool('apksigner'), str(root / '36.0.0/apksigner'))
+            (root / '36.0.0/apksigner').unlink()
+            with self.assertRaisesRegex(ValueError, '36.0.0 is missing'):
+                tool('apksigner')
+
     def test_identity_errors_are_specific_and_do_not_echo_tool_output(self):
         from run import identity, InputIdentityError
         profile = {'package': 'VirtualDesktop.Android', 'managedSigner': {'originalCertificateSha256': 'a' * 64}}

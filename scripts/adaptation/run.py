@@ -36,9 +36,9 @@ def dump(path, value):
 
 def tool(name):
     sdk = Path(os.environ.get('ANDROID_HOME') or os.environ.get('ANDROID_SDK_ROOT') or '')
-    paths = sorted((sdk / 'build-tools').glob('*/' + name), reverse=True)
-    checked(bool(paths), 'Android build tool is missing: ' + name)
-    return str(paths[0])
+    path = sdk / 'build-tools' / '36.0.0' / name
+    checked(path.is_file(), 'Android build tool 36.0.0 is missing: ' + name)
+    return str(path)
 
 
 def identity(apk, profile):
