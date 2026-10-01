@@ -7,13 +7,94 @@ from pathlib import Path
 import struct
 import sys
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'scripts/adaptation'))
 import policy
+import observation
 DEPS = all(importlib.util.find_spec(m) for m in ('capstone', 'dnfile', 'dncil', 'elftools', 'lz4'))
+
+
+class MetadataObservation(unittest.TestCase):
+    def test_empty_business_response_recovers_without_changing_identity(self):
+        client, target, auth = Mock(), object(), object()
+        expected = SimpleNamespace(version_code=10709)
+        client.download_info.side_effect = [ValueError('invalid PICO response'), expected]
+        sleep, report = Mock(), Mock()
+        self.assertIs(observation.download_info(client, target, auth, sleep=sleep, report=report), expected)
+        self.assertEqual(client.download_info.call_args_list, [((target, auth),), ((target, auth),)])
+        sleep.assert_called_once_with(1)
+        self.assertEqual(json.loads(report.call_args.args[0])['category'], 'incomplete_metadata')
+
+    def test_exhausted_observation_is_failure_not_unchanged(self):
+        client, sleep, report = Mock(), Mock(), Mock()
+        client.download_info.side_effect = ValueError('PICO returned incomplete APK metadata')
+        with self.assertRaises(observation.MetadataObservationError) as raised:
+            observation.download_info(client, None, None, sleep=sleep, report=report)
+        self.assertEqual(raised.exception.diagnostic(), {'category': 'incomplete_metadata', 'attempts': 3})
+        self.assertEqual(client.download_info.call_count, 3)
+        self.assertEqual([c.args[0] for c in sleep.call_args_list], [1, 2])
+
+    def test_bad_json_and_numeric_service_code_are_retryable(self):
+        client = Mock()
+        client.download_info.side_effect = [json.JSONDecodeError('bad', 'secret response', 0),
+                                           ValueError('PICO download info failed: 1104'), 'ready']
+        report = Mock()
+        self.assertEqual(observation.download_info(client, None, None, sleep=Mock(), report=report), 'ready')
+        events = [json.loads(c.args[0]) for c in report.call_args_list]
+        self.assertEqual(events[0]['category'], 'invalid_json')
+        self.assertEqual(events[1]['serviceCode'], 1104)
+        self.assertNotIn('secret response', str(report.call_args_list))
+
+    def test_wrong_package_never_retries(self):
+        client, sleep = Mock(), Mock()
+        client.download_info.side_effect = ValueError('PICO returned an unexpected download package')
+        with self.assertRaisesRegex(observation.MetadataObservationError, 'unexpected_package'):
+            observation.download_info(client, None, None, sleep=sleep)
+        self.assertEqual(client.download_info.call_count, 1)
+        sleep.assert_not_called()
+
+    def test_transport_budget_is_not_multiplied_and_secrets_are_not_logged(self):
+        for error in (RuntimeError('request failed https://example.test/?token=SECRET'),
+                      ValueError('unrecognized response SECRET'), OSError('SECRET')):
+            with self.subTest(error_type=type(error).__name__):
+                client, sleep, report = Mock(), Mock(), Mock()
+                client.download_info.side_effect = error
+                with self.assertRaises(observation.MetadataObservationError) as raised:
+                    observation.download_info(client, None, None, sleep=sleep, report=report)
+                self.assertNotIn('SECRET', str(raised.exception))
+                self.assertNotIn('SECRET', json.dumps(raised.exception.diagnostic()))
+                self.assertEqual(client.download_info.call_count, 1)
+                sleep.assert_not_called()
+                report.assert_not_called()
+
+    def test_invalid_budget_does_not_query(self):
+        client = Mock()
+        for budget in (0, 4, True):
+            with self.assertRaises(ValueError):
+                observation.download_info(client, None, None, attempts=budget)
+        client.download_info.assert_not_called()
+
+    @unittest.skipUnless(importlib.util.find_spec('pico_store_lab'), 'requires PICO SDK')
+    def test_failed_watch_retains_safe_report_and_exits_as_failure(self):
+        import tempfile
+        import watch
+        with tempfile.TemporaryDirectory() as temp, \
+                patch.dict(os.environ, {'PICO_AUTH_JSON': '{"x_tt_token":"PRIVATE"}'}), \
+                patch('watch.PicoStoreClient') as client, \
+                patch('watch.download_info', side_effect=observation.MetadataObservationError('service_rejected', 3, 1104)), \
+                patch('sys.argv', ['watch.py', '--output', str(Path(temp) / 'result')]):
+            with self.assertRaises(observation.MetadataObservationError):
+                watch.main()
+            text = (Path(temp) / 'result/report.json').read_text()
+            report = json.loads(text)
+            self.assertEqual(report['state'], 'failed')
+            self.assertEqual(report['failedStage'], 'observing')
+            self.assertEqual(report['observation']['serviceCode'], 1104)
+            self.assertNotIn('PRIVATE', text)
+            client.assert_called_once()
 
 
 @unittest.skipUnless(DEPS, 'requires pinned adaptation dependencies')

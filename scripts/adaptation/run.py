@@ -15,6 +15,7 @@ import zipfile
 from analysis import (ROOT, KEYS, baseline, candidates, checked, derive, fingerprint,
                       native_context, sample, text_section)
 from agent import run_agent
+from observation import MetadataObservationError, download_info
 
 TARGET_ID = '3540'
 MAX_APK = 2 * 1024**3
@@ -62,7 +63,7 @@ def observed():
     checked(bool(raw), 'PICO_AUTH_JSON is missing')
     client = PicoStoreClient()
     target = StoreTarget(TARGET_ID, 'VirtualDesktop.Android', 'Virtual Desktop')
-    item = client.download_info(target, PicoAuth(**json.loads(raw)))
+    item = download_info(client, target, PicoAuth(**json.loads(raw)))
     return client, target, item
 
 
@@ -72,7 +73,7 @@ def acquire(client, target, version, apk):
     checked(bool(raw), 'PICO_AUTH_JSON is missing; renew the PICO session in the vd-adaptation environment')
     auth = PicoAuth(**json.loads(raw))
     # No automatic purchase or entitlement mutation.
-    info = client.download_info(target, auth)
+    info = download_info(client, target, auth)
     checked(info.version_code == version and 0 < info.size <= MAX_APK, 'Download metadata changed or exceeds 2 GiB')
     # Do not log the signed URL, response body, account ID or cookies.
     md5 = hashlib.md5()
@@ -226,7 +227,9 @@ def main():
     except Exception as error:
         if report['state'] != 'review-required':
             report.update(failedStage=report['state'], state='failed',
-                          reason=str(error) if isinstance(error, InputIdentityError) else type(error).__name__ + ': operation failed at named stage')
+                          reason=str(error) if isinstance(error, (InputIdentityError, MetadataObservationError)) else type(error).__name__ + ': operation failed at named stage')
+            if isinstance(error, MetadataObservationError):
+                report['observation'] = error.diagnostic()
         raise
     finally:
         dump(args.output / 'report.json', report)

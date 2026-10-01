@@ -10,6 +10,7 @@ import zipfile
 from pico_store_lab.client import PicoStoreClient
 from pico_store_lab.protocol import PicoAuth, StoreTarget
 from policy import require, read_json
+from observation import MetadataObservationError, download_info
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -47,7 +48,18 @@ def main():
     baseline = read_json(ROOT / 'profiles/vd/adaptation-baseline.json')
     raw = os.environ.get('PICO_AUTH_JSON')
     require(bool(raw), 'PICO session is missing')
-    info = PicoStoreClient().download_info(StoreTarget('3540', 'VirtualDesktop.Android'), PicoAuth(**json.loads(raw)))
+    auth = PicoAuth(**json.loads(raw))
+    try:
+        info = download_info(PicoStoreClient(), StoreTarget('3540', 'VirtualDesktop.Android'), auth)
+    except MetadataObservationError as error:
+        args.output.mkdir(parents=True)
+        (args.output / 'report.json').write_text(json.dumps({
+            'schema': 1, 'state': 'failed', 'failedStage': 'observing',
+            'baseCommit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+            'previousInputSha256': profile['inputSha256'], 'reason': str(error),
+            'observation': error.diagnostic(), 'agentUsed': False,
+        }, indent=2) + '\n')
+        raise
     metadata = {'versionCode': info.version_code, 'md5': info.md5, 'bytes': info.size}
     require(info.version_code >= profile['versionCode'], 'Store offered an older build; review required')
     changed = (info.version_code != profile['versionCode'] or info.md5 != baseline['apkMd5'] or info.size != baseline['apkBytes'])
@@ -70,6 +82,9 @@ def main():
 if __name__ == '__main__':
     try:
         main()
+    except MetadataObservationError as error:
+        print(str(error))
+        raise SystemExit(1)
     except Exception as error:
         print('Metadata observation failed: ' + type(error).__name__ + '; check the PICO session, ownership and official service availability')
         raise SystemExit(1)

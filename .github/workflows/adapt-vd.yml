@@ -55,11 +55,12 @@ jobs:
           if [[ "$RECHECK" == true ]]; then args+=(--recheck); fi
           python scripts/adaptation/watch.py --output "$RUNNER_TEMP/vd-watch" "${args[@]}"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        if: steps.watch.outputs.state == 'unchanged'
+        if: always() && steps.watch.outputs.state != 'pending'
         with:
           name: vd-candidate
           path: ${{ runner.temp }}/vd-watch/report.json
           retention-days: 14
+          if-no-files-found: ignore
       - name: Show observation
         env:
           STATE: ${{ steps.watch.outputs.state }}

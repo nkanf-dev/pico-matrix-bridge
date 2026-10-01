@@ -55,6 +55,8 @@ gh workflow run adapt-vd.yml -f dry_run=false -f recheck_current=true
 
 A previously rejected build is recognized from retained review artifacts and is not repeatedly downloaded or sent to the model. Explicit rechecks bypass that suppression. Reports are retained for 14 days; after expiration a still-unhandled build can be inspected again. Session/network failures remain failures rather than being cached as successful observations.
 
+Official metadata can occasionally be empty or malformed despite a successful HTTP response. Observation retries those responses up to three times with one- and two-second delays; it does not multiply the SDK's existing transport retry budget. Wrong-package and invalid-request failures stop immediately. An exhausted observation stays failed and retains a compact report with the failure category, attempt count and numeric service code when present. Raw account responses and exception URLs are never retained. The analysis/acquisition path uses the same observer.
+
 Publication is serialized, uses a non-force push, and checks that the report belongs to the current main commit. If main changes, rerun against the new head. If signing fails after the data commit, a later unchanged observation dispatches signing again for the current pinned input. Existing releases are identified by the input hash in their release notes. The publisher binds `expected_sha` to the actual dispatch commit.
 
 ## Local reproduction
