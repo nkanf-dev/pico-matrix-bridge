@@ -5,6 +5,25 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class InstallationCallbackTest {
+    @Test public void recoveredReceiptsExposeExactSystemCodesWithoutPrivateMessages() throws Exception {
+        JSONObject receipt=new JSONObject().put("id","job").put("stage","failed").put("package","app.example")
+            .put("code","installation_invalid").put("installerStatus",4).put("installerLegacyStatus",-103);
+        InstallationStatus status=InstallationJournal.status(receipt);
+        assertEquals(Integer.valueOf(4),status.installerStatus);
+        assertEquals(Integer.valueOf(-103),status.installerLegacyStatus);
+        receipt.remove("installerStatus");receipt.remove("installerLegacyStatus");
+        assertNull(InstallationJournal.status(receipt).installerStatus);
+        assertNull(new InstallationStatus("job","failed","app.example","installation_invalid").installerLegacyStatus);
+    }
+    @Test public void installRejectionsKeepSystemCompatibilityAndStorageDistinctFromDamagedPackages() {
+        assertEquals("installation_invalid",MatrixInstaller.failureCode(android.content.pm.PackageInstaller.STATUS_FAILURE_INVALID));
+        assertEquals("installation_incompatible",MatrixInstaller.failureCode(android.content.pm.PackageInstaller.STATUS_FAILURE_INCOMPATIBLE));
+        assertEquals("installation_conflict",MatrixInstaller.failureCode(android.content.pm.PackageInstaller.STATUS_FAILURE_CONFLICT));
+        assertEquals("not_enough_storage",MatrixInstaller.failureCode(android.content.pm.PackageInstaller.STATUS_FAILURE_STORAGE));
+        assertEquals("installation_blocked",MatrixInstaller.failureCode(android.content.pm.PackageInstaller.STATUS_FAILURE_BLOCKED));
+        assertEquals("installation_cancelled",MatrixInstaller.failureCode(android.content.pm.PackageInstaller.STATUS_FAILURE_ABORTED));
+        assertEquals("installation_failed",MatrixInstaller.failureCode(999));
+    }
     @Test public void collidingGenericPackageCannotReplaceAnotherApplication() throws Exception {
         JSONObject installed=new JSONObject().put("originalPackage","example.first").put("appId","first-id");
         assertTrue(MatrixInstaller.sameAdaptedOrigin(installed,"example.first","first-id"));
