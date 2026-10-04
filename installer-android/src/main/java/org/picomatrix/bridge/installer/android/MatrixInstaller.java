@@ -61,7 +61,9 @@ public final class MatrixInstaller {
             progress(id,"checking","","checking_application");
             if(!original.isFile() || original.length()==0) throw new IOException("download_unavailable");
             String originalHash=LocalSigner.hash(original);
-            String originalSigner=LocalSigner.verify(original);
+            String originalSigner;
+            try {originalSigner=LocalSigner.verify(original);}
+            catch(Exception e) {throw new IOException("invalid_application",e);}
             if(!originalHash.equals(LocalSigner.hash(original))) throw new SecurityException("preparation_changed");
             AdapterEngine.Inspection inspection=null;
             if(mode!=Mode.ORIGINAL) {
@@ -131,8 +133,9 @@ public final class MatrixInstaller {
             }
             return InstallationJournal.status(record);
         } catch(Exception e) {
-            android.util.Log.e("MatrixInstaller","Application preparation failed",e);
-            String code=knownCode(e.getMessage());progress(id,"failed","",code);throw new IOException(code,e);
+            String code=knownCode(e.getMessage());
+            android.util.Log.e("MatrixInstaller","Application preparation failed: "+code+" ("+e.getClass().getSimpleName()+")");
+            progress(id,"failed","",code);throw new IOException(code,e);
         } finally {
             // PackageInstaller owns its staged bytes after fsync/commit. Keep the original download.
             if(work!=null) removeGenerated(work);PREPARING.set(false);
@@ -140,7 +143,7 @@ public final class MatrixInstaller {
     }
     private static String knownCode(String code) {
         if(code!=null && Set.of("installation_busy","download_unavailable","application_update_required","not_enough_storage",
-            "existing_signature_conflict","application_downgrade","adaptation_unavailable").contains(code)) return code;
+            "existing_signature_conflict","application_downgrade","adaptation_unavailable","invalid_application").contains(code)) return code;
         return "preparation_failed";
     }
     private PendingIntent callback(JSONObject record) throws Exception {
@@ -156,6 +159,8 @@ public final class MatrixInstaller {
             JSONObject record=journal.get(data.getLastPathSegment());
             if(record==null || !acceptCallback(record,intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID,-1))) return;
             int status=intent.getIntExtra(PackageInstaller.EXTRA_STATUS,PackageInstaller.STATUS_FAILURE);
+            int legacy=intent.getIntExtra("android.content.pm.extra.LEGACY_STATUS",0);
+            record.put("installerStatus",status).put("installerLegacyStatus",legacy);
             if(status==PackageInstaller.STATUS_PENDING_USER_ACTION) {
                 @SuppressWarnings("deprecation") Intent confirmation=intent.getParcelableExtra(Intent.EXTRA_INTENT);
                 if(confirmation==null) {stage(record,"failed","installation_failed");return;}
@@ -166,9 +171,23 @@ public final class MatrixInstaller {
                 stage(record,"verifying_install","verifying_application");
                 String id=record.getString("id");
                 EXECUTOR.execute(()->completeVerification(id));
-            } else if(status==PackageInstaller.STATUS_FAILURE_ABORTED) stage(record,"cancelled","installation_cancelled");
-            else stage(record,"failed","installation_failed");
+            } else {
+                // Keep numeric diagnostics; raw system text can include private paths.
+                android.util.Log.w("MatrixInstaller","Install failed: status="+status+" legacy="+legacy);
+                stage(record,status==PackageInstaller.STATUS_FAILURE_ABORTED?"cancelled":"failed",failureCode(status));
+            }
         } catch(Exception ignored) {emit(new InstallationStatus("","failed","","installation_status_unavailable"));}
+        }
+    }
+    static String failureCode(int status) {
+        switch(status) {
+            case PackageInstaller.STATUS_FAILURE_ABORTED:return "installation_cancelled";
+            case PackageInstaller.STATUS_FAILURE_BLOCKED:return "installation_blocked";
+            case PackageInstaller.STATUS_FAILURE_CONFLICT:return "installation_conflict";
+            case PackageInstaller.STATUS_FAILURE_INCOMPATIBLE:return "installation_incompatible";
+            case PackageInstaller.STATUS_FAILURE_INVALID:return "installation_invalid";
+            case PackageInstaller.STATUS_FAILURE_STORAGE:return "not_enough_storage";
+            default:return "installation_failed";
         }
     }
     private void completeVerification(String id) {

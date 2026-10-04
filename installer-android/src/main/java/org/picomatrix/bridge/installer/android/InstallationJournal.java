@@ -39,5 +39,9 @@ final class InstallationJournal {
         }
     }
     JSONObject get(String id) throws Exception { for(JSONObject r:read()) if(r.getString("id").equals(id)) return r;return null; }
-    static InstallationStatus status(JSONObject r) { return new InstallationStatus(r.optString("id"),r.optString("stage"),r.optString("package"),r.optString("code")); }
+    static InstallationStatus status(JSONObject r) {
+        return new InstallationStatus(r.optString("id"),r.optString("stage"),r.optString("package"),r.optString("code"),
+            r.has("installerStatus")?r.optInt("installerStatus"):null,
+            r.has("installerLegacyStatus")?r.optInt("installerLegacyStatus"):null);
+    }
 }
