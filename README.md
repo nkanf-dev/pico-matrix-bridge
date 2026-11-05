@@ -11,6 +11,8 @@ Use your PICO international account in supported apps on a China-region headset,
 
 Matrix Bridge works with apps that use the PICO Platform SDK. It prepares an installable copy with the compatibility runtime included, then lets the app run with your own account.
 
+Adapted copies are re-signed. Where an app checks its own signature, the check is adjusted for the new signing key and no longer verifies the original publisher's signature.
+
 ## With PICO Store Lab
 
 The Android integration brings preparation and account setup into the normal download and install flow:
