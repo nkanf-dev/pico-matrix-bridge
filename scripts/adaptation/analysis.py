@@ -16,6 +16,7 @@ from dncil.clr.token import Token, StringToken
 from elftools.elf.elffile import ELFFile
 import lz4.block
 from capstone import Cs, CS_ARCH_ARM64, CS_MODE_LITTLE_ENDIAN
+from mono_aot import method_ranges
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'profiles/vd/scripts'))
@@ -172,24 +173,45 @@ def native_context(code, base, address):
 
 
 def candidates(code, base, rule):
-    low_word = 0x52800008 | ((rule['expected'] & 0xffff) << 5)
-    high_word = 0x72a00008 | (((rule['expected'] >> 16) & 0xffff) << 5)
-    dh = int(rule['high'], 16) - int(rule['low'], 16)
-    dc = int(rule['compare'], 16) - int(rule['low'], 16)
     matches = []
-    for at in range(48, len(code) - max(dc + 4, 40), 4):
-        if (struct.unpack_from('<I', code, at)[0] == low_word
-                and struct.unpack_from('<I', code, at + dh)[0] == high_word
-                and struct.unpack_from('<I', code, at + dc)[0] == 0x6b08001f):
-            matches.append({'low': hex(base + at), 'high': hex(base + at + dh),
-                            'compare': hex(base + at + dc),
-                            'contextSha256': fingerprint(native_context(code, base, base + at))})
+    expected = rule['expected'] & 0xffffffff
+    for at in range(48, len(code) - 40, 4):
+        low, = struct.unpack_from('<I', code, at)
+        register = low & 31
+        if (low & 0xffe00000 != 0x52800000 or register == 31 or
+                (low >> 5) & 0xffff != expected & 0xffff):
+            continue
+        for high_at in range(at + 4, min(at + 52, len(code) - 4), 4):
+            high, = struct.unpack_from('<I', code, high_at)
+            if (high & 0xffe00000 != 0x72a00000 or high & 31 != register or
+                    (high >> 5) & 0xffff != expected >> 16):
+                continue
+            for cmp_at in range(high_at + 4, min(high_at + 52, len(code) - 3), 4):
+                comparison, = struct.unpack_from('<I', code, cmp_at)
+                left, right = (comparison >> 5) & 31, (comparison >> 16) & 31
+                if (comparison & 0xffe0fc1f == 0x6b00001f and
+                        register in (left, right) and left != right and 31 not in (left, right)):
+                    matches.append({'low': hex(base + at), 'high': hex(base + high_at),
+                                    'compare': hex(base + cmp_at),
+                                    'contextSha256': fingerprint(native_context(code, base, base + at))})
     return matches
 
 
-def locate_native(code, base, rule, anchor):
+def locate_native(code, base, rule, anchor, selected=None, method_range=None):
     """Prefer exact context, otherwise require one clearly better structural match."""
     found = candidates(code, base, rule)
+    if method_range is not None:
+        start, end = method_range
+        found = [item for item in found if start <= int(item['low'], 16) and int(item['compare'], 16) + 4 <= end]
+        checked(bool(found), 'Native comparison missing in managed method: ' + rule['method'])
+    if selected is not None:
+        checked(set(selected) == {'method', 'low', 'high', 'compare'} and
+                selected['method'] == rule['method'], 'Invalid selected native comparison')
+        matches = [item for item in found if all(item[k] == selected[k] for k in ('low', 'high', 'compare'))]
+        checked(len(matches) == 1, 'Selected native comparison is not present in the APK')
+        return matches[0]
+    if method_range is not None and len(found) == 1:
+        return found[0]
     exact = [item for item in found if item['contextSha256'] == anchor['contextSha256']]
     if len(exact) == 1:
         return exact[0]
@@ -217,6 +239,49 @@ def callback_candidates(image, selector):
              for m in t.MethodList if CALLBACK.fullmatch(str(m.row.Name))]
     checked(len(names) <= 16, 'Too many identity callback candidates')
     return [{'method': name, **managed_gate(image, dict(selector, method=name))} for name in names]
+
+
+def embedded_signer(image, selector, publisher_sha256):
+    """Read the actual signer's certificate literal referenced by the VD startup method."""
+    checked(isinstance(publisher_sha256, str) and re.fullmatch(r'[0-9a-f]{64}', publisher_sha256),
+            'Invalid APK signer digest')
+    pe = dnfile.dnPE(data=image)
+    _, body = method(pe, selector)
+    matches = []
+    for ins in body.instructions:
+        if ins.opcode.name != 'ldstr' or not isinstance(ins.operand, StringToken):
+            continue
+        try:
+            value = pe.net.user_strings.get(ins.operand.value & 0xffffff).value
+            certificate = bytes.fromhex(value)
+        except (ValueError, TypeError, AttributeError):
+            continue
+        if digest(certificate) == publisher_sha256:
+            matches.append(certificate)
+    checked(len(matches) == 1, 'Startup certificate literal missing or ambiguous')
+    return matches[0]
+
+
+def callback_evidence(image, selector):
+    """Bounded structure for candidate selection; literal strings are not exposed."""
+    pe = dnfile.dnPE(data=image)
+    _, body = method(pe, selector)
+    instructions = []
+    selected = body.instructions if len(body.instructions) <= 32 else body.instructions[:16] + body.instructions[-16:]
+    for ins in selected:
+        item = {'op': ins.opcode.name}
+        operand = ins.operand
+        if isinstance(operand, Token) and not isinstance(operand, StringToken):
+            try:
+                row = pe.net.mdtables.tables[operand.value >> 24].rows[(operand.value & 0xffffff) - 1]
+                if hasattr(row, 'Name'):
+                    item['member'] = str(row.Name)[:64]
+            except (IndexError, KeyError, AttributeError):
+                pass
+        elif type(operand) is int:
+            item['value'] = operand
+        instructions.append(item)
+    return {'instructions': instructions, 'truncated': len(body.instructions) > 32}
 
 
 def sample(apk, profile, tolerate_missing=False):
@@ -267,10 +332,19 @@ def baseline(apk, profile):
             'assemblyCount': count, 'stableEntries': stable, 'gates': gates, 'native': native}
 
 
-def derive(apk, profile, proof, version_code, version_name, renames=None):
+def derive(apk, profile, proof, version_code, version_name, renames=None, native_anchors=None, publisher_sha256=None):
     checked(proof['schema'] == 1 and proof['profileSha256'] == fingerprint(profile)
             and proof['inputSha256'] == profile['inputSha256'], 'Baseline does not belong to profile')
     effective = copy.deepcopy(profile)
+    checked(isinstance(native_anchors or [], list) and len(native_anchors or []) <= len(profile['aotSignerHashes']['comparisons']),
+            'Too many selected native comparisons')
+    selected = {}
+    for item in native_anchors or []:
+        checked(isinstance(item, dict) and set(item) == {'method', 'low', 'high', 'compare'} and
+                isinstance(item['method'], str) and item['method'] not in selected, 'Invalid selected native comparison')
+        selected[item['method']] = item
+    checked(set(selected) <= {rule['method'] for rule in profile['aotSignerHashes']['comparisons']},
+            'Unknown selected native comparison')
     checked(isinstance(renames or [], list) and len(renames or []) <= 1, 'Too many managed mappings')
     for rename in renames or []:
         checked(set(rename) == {'oldMethod', 'newMethod'} and CALLBACK.fullmatch(rename['oldMethod'])
@@ -302,16 +376,20 @@ def derive(apk, profile, proof, version_code, version_name, renames=None):
                     **options[0])
     for rename in renames or []:
         selector = next(r for r in effective['managedSignerHashes']['methods'] if r['method'] == rename['newMethod'])
-        expected = next(g for g in proof['gates'] if g['type'] == selector['type'] and g['method'] == rename['oldMethod'])
         options = callback_candidates(images[effective['managedSignerHashes']['assembly']], selector)
-        matches = [r for r in options if r['sha256'] == expected['sha256']]
-        checked((len(options) == 1 and options[0]['method'] == rename['newMethod']) or
-                (len(matches) == 1 and matches[0]['method'] == rename['newMethod']), 'Managed mapping is ambiguous')
+        checked(sum(r['method'] == rename['newMethod'] for r in options) == 1,
+                'Selected managed method is not present in the APK')
     checked(len(gates) == len(proof['gates']), 'Managed gate set changed')
     checked(all(not gate.get('missing') for gate in gates), 'Managed gate missing')
     result = copy.deepcopy(effective)
     result.update(id=f'vd-{version_name}-{version_code}-arm64-research', versionCode=version_code,
                   appVersion=version_name, inputSha256=reference.file_digest(apk))
+    publisher_sha256 = publisher_sha256 or profile['managedSigner']['originalCertificateSha256']
+    signer = embedded_signer(images[result['managedSigner']['assembly']], result['managedSigner'], publisher_sha256)
+    signer_hashes = reference.certificate_hashes(signer)
+    result['managedSigner']['originalCertificateSha256'] = publisher_sha256
+    result['managedSignerHashes']['originalJavaHash'] = signer_hashes['java']
+    result['managedSignerHashes']['originalX509Hash'] = signer_hashes['x509']
     result['managedSigner']['sha256'] = digest(blob)
     loader_name = result['managedLoaderIntegrity']['library']
     result['libraries'][loader_name]['sha256'] = digest(loader)
@@ -321,15 +399,18 @@ def derive(apk, profile, proof, version_code, version_name, renames=None):
         result[key]['assemblySha256'] = digest(images[result[key]['assembly']])
     result['aotSignerHashes']['sha256'] = digest(aot)
     code, base = text_section(aot)
+    ranges = method_ranges(aot, [gate['token'] for gate in gates])
     used = set()
     for old, anchor, rule in zip(profile['aotSignerHashes']['comparisons'], proof['native'], result['aotSignerHashes']['comparisons']):
         checked(anchor['method'] == old['method'], 'Native baseline order changed')
-        match = locate_native(code, base, old, anchor)
+        selector = next(g for g in gates if g['type'].split('.')[-1] + '::' + g['method'] == rule['method'])
+        search_rule = dict(old, expected=signer_hashes[old['hash']])
+        match = locate_native(code, base, search_rule, anchor, selected.get(old['method']), ranges.get(selector['token']))
         checked(match['low'] not in used, 'Native anchors overlap')
         used.add(match['low'])
         for key in ('low', 'high', 'compare'):
             rule[key] = match[key]
-        selector = next(g for g in gates if g['type'].split('.')[-1] + '::' + g['method'] == rule['method'])
+        rule['expected'] = signer_hashes[rule['hash']]
         rule['methodToken'] = selector['token']
     recipe = compile_recipe(apk, result)
     return result, recipe

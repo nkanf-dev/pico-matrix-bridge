@@ -54,9 +54,12 @@ public final class IntegrityRecipe {
         Portable.require(comparisons.length()==3,"Expected three signer comparisons");
         for(int i=0;i<comparisons.length();i++) {
             JSONObject c=comparisons.getJSONObject(i);int expected=c.getInt("expected"),replacement=signerHash(certificate,c.getString("hash"));
-            Portable.require(i32(original,c.getInt("compare"))==0x6b08001f,"AOT comparison opcode changed");
+            int register=i32(original,c.getInt("low"))&31,cmp=i32(original,c.getInt("compare"));
+            int left=(cmp>>>5)&31,right=(cmp>>>16)&31;
+            Portable.require(register!=31&&(cmp&0xffe0fc1f)==0x6b00001f&&(register==left||register==right)&&
+                left!=right&&left!=31&&right!=31,"AOT comparison opcode changed");
             for(int shift:new int[]{0,16}) {
-                int at=c.getInt(shift==0?"low":"high"),opcode=shift==0?0x52800008:0x72a00008;
+                int at=c.getInt(shift==0?"low":"high"),opcode=(shift==0?0x52800000:0x72a00000)|register;
                 Portable.require(at%4==0&&touched.add(at),"Overlapping native operands");
                 Portable.require(i32(original,at)==(opcode|(((expected>>>shift)&65535)<<5)),"AOT signer operand changed");
                 put32(result,at,opcode|(((replacement>>>shift)&65535)<<5));

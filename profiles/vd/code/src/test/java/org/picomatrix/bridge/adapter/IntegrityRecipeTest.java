@@ -8,6 +8,30 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 public class IntegrityRecipeTest {
+    @Test public void aotSupportsDifferentRegistersAndPreservesComparison() throws Exception {
+        byte[] cert={1,2,3}, image=new byte[96];int expected=1778352252;
+        ByteBuffer words=ByteBuffer.wrap(image).order(ByteOrder.LITTLE_ENDIAN);
+        JSONArray comparisons=new JSONArray();
+        for(int i=0;i<3;i++) {
+            int at=i*24, reg=9+i;
+            words.putInt(at,0x52800000|((expected&65535)<<5)|reg);
+            words.putInt(at+8,0x72a00000|(((expected>>>16)&65535)<<5)|reg);
+            words.putInt(at+16,0x6b00001f|(reg<<16)|(2<<5));
+            comparisons.put(new JSONObject().put("low",at).put("high",at+8).put("compare",at+16)
+                .put("expected",expected).put("hash","java"));
+        }
+        JSONObject rule=new JSONObject().put("sha256",Portable.sha(image)).put("comparisons",comparisons);
+        byte[] patched=IntegrityRecipe.aot(image,rule,cert);
+        ByteBuffer result=ByteBuffer.wrap(patched).order(ByteOrder.LITTLE_ENDIAN);
+        for(int i=0;i<3;i++) {
+            int at=i*24,actual=((result.getInt(at)>>>5)&65535)|(((result.getInt(at+8)>>>5)&65535)<<16);
+            assertEquals(Arrays.hashCode(cert),actual);
+            assertEquals(words.getInt(at+16),result.getInt(at+16));
+        }
+        words.putInt(16,0x6b00001f|(7<<16)|(2<<5));
+        rule.put("sha256",Portable.sha(image));
+        assertThrows(IllegalArgumentException.class,()->IntegrityRecipe.aot(image,rule,cert));
+    }
     @Test public void actualSignerUpdatesOnlyCheckedOperands() throws Exception {
         byte[] cert={1,2,(byte)200},image=new byte[80];Arrays.fill(image,(byte)0x4a);image[9]=0x20;
         ByteBuffer.wrap(image).order(ByteOrder.LITTLE_ENDIAN).putInt(10,4567);
