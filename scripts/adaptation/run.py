@@ -219,7 +219,7 @@ def main():
         next_baseline = baseline(apk, proposed)
         report.update(state='verified', inputSha256=proposed['inputSha256'], versionCode=version,
                       recipeSha256=fingerprint(recipe), sourceSha256=fingerprint(proposed), baselineSha256=fingerprint(next_baseline),
-                      allAssembliesEqual=differential['all185AssembliesEqual'],
+                      allAssembliesEqual=differential['allAssembliesEqual'],
                       onlyIntegrityConstantsChanged=differential['onlyIntegrityConstantsChanged'])
         dump(args.output / 'source.json', proposed)
         dump(args.output / 'recipe.json', recipe)

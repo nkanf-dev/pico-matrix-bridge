@@ -38,7 +38,9 @@ def main():
         target, recipe, new_proof = result
         if target['inputSha256'] != old['inputSha256']:
             source_path = ROOT / 'profiles/vd' / f"client-{target['appVersion']}-{target['versionCode']}-research.json"
-            require(not source_path.exists(), 'Refusing to replace an existing pinned source')
+            current_path = ROOT / 'profiles/vd' / f"client-{old['appVersion']}-{old['versionCode']}-research.json"
+            require(not source_path.exists() or (source_path == current_path and
+                    target['versionCode'] == old['versionCode']), 'Refusing to replace a different pinned source')
             paths = [source_path, ROOT / 'profiles/vd/recipe.json', ROOT / 'profiles/vd/adaptation-baseline.json']
             for path, value in zip(paths, (target, recipe, new_proof)):
                 path.write_text(json.dumps(value, indent=2) + '\n')

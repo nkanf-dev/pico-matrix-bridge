@@ -11,7 +11,7 @@ flowchart TD
   B -- Yes --> D[Download once and verify size, MD5, package and publisher]
   D --> E[Relocate managed operands and unique native contexts]
   E -- Checks pass --> F[Recompile and compare Python with JVM output]
-  E -- Changed or ambiguous --> G[OMP reads bounded evidence]
+  E -- Cannot locate --> G[OMP reads bounded evidence]
   G -- Callback rename candidate --> E
   G -- Cannot independently verify --> H[Retain review report; keep current profile]
   F --> I[Separate job validates data boundary and current main SHA]
@@ -21,13 +21,13 @@ flowchart TD
   K --> L[Existing signing environment verifies, signs and publishes]
 ```
 
-The automatic path only changes input hashes, version metadata and checked operand locations. It preserves the package strategy, original certificate, loader, declaring types and entry points, constant values, expected call sites and patch counts. The compiler retains its existing original-byte and structural checks. The JVM differential checks cover all 185 assemblies and the routed loader/native library against the Python reference.
+The automatic path updates input hashes, version metadata, loader digest/size and checked operand locations. It preserves the package strategy, original certificate, loader routing, declaring types and entry points, constant values, expected call sites and patch counts. The compiler retains its original-byte and structural checks. The JVM differential checks cover every assembly and the routed loader/native library against the Python reference, without requiring a fixed assembly count.
 
-The baseline hashes five scoped managed methods, including instruction operands, referenced types/assemblies, local signatures, method headers and exception handlers. Each native comparison must have one matching 22-instruction context. Register choices, virtual call slots, comparison values and branch direction/distance are retained; direct-call addresses and recognized PC-relative page/load addresses are normalized. A context match is a deliberately conservative relocation rule, not whole-program semantic equivalence. A new loader, Java code/resource change, ambiguous native match or changed gate stops automatic publication. Review the retained evidence and update trusted rules when necessary.
+The baseline records five scoped managed methods and 22 instructions around each native comparison. A compiler-numbered identity callback is renamed automatically when the declaring type has exactly one candidate. Native comparisons use an exact context when available; otherwise the locator selects a sufficiently similar candidate only when it is clearly distinct from alternatives. A changed DEX, resource, assembly count, loader bytes or managed fingerprint alone does not stop adaptation. The locator is not a proof of whole-program equivalence. A missing method, unsupported loader routing or ambiguous native location still requires review.
 
 ## Agent
 
-The runtime is OMP `18.1.17` with `mikumiku-openai/glm-5.3-flash` using the configured OpenAI-compatible endpoint. Normal data-only relocation makes no model call. A failed relocation invokes the agent once to diagnose the supplied evidence and record a candidate mapping or review requirement. For a compiler-numbered `GetHasValidIdentityAsync` callback rename, the agent can submit the new name. The trusted checker independently requires exactly one method with the baseline scoped-IL fingerprint in the same declaring type, plus the unchanged native context, and recompiles every operand. Only that checked data mapping can join the publication path. A model's equivalence claim never overrides a failed deterministic check. Changes to the adapter algorithm are reviewed code changes, not model-authorized releases.
+The runtime is OMP `18.1.17` with `mikumiku-openai/glm-5.3-flash` using the configured OpenAI-compatible endpoint. Deterministic relocation makes no model call, including a unique callback rename. If relocation fails, the agent may inspect bounded evidence; all candidate output is checked independently before use. A model's equivalence claim never overrides a failed deterministic check. Changes to the adapter algorithm remain code changes.
 
 OMP runs with an isolated home, no sessions, rules, skills, LSP, PTY or built-in tools. Its explicit extension provides only `read_evidence` and `submit_candidate`. It has at most 12 tool executions, 4,096 output tokens per response and a 180-second agent budget (210-second process cutoff). It receives no PICO session, GitHub write token or signing variables. Its raw traces are discarded. Only a bounded structured report is retained.
 
@@ -53,7 +53,7 @@ gh workflow run adapt-vd.yml -f dry_run=true -f recheck_current=true -f force_ag
 gh workflow run adapt-vd.yml -f dry_run=false -f recheck_current=true
 ```
 
-A previously rejected build is recognized from retained review artifacts and is not repeatedly downloaded or sent to the model. Explicit rechecks bypass that suppression. Reports are retained for 14 days; after expiration a still-unhandled build can be inspected again. Session/network failures remain failures rather than being cached as successful observations.
+A previously rejected build is not repeatedly downloaded or sent to the model while main remains unchanged. A new main commit or an explicit recheck retries it. Reports are retained for 14 days. Session/network failures remain failures rather than being cached as successful observations.
 
 Official metadata can occasionally be empty or malformed despite a successful HTTP response. Observation retries those responses up to three times with one- and two-second delays; it does not multiply the SDK's existing transport retry budget. Wrong-package and invalid-request failures stop immediately. An exhausted observation stays failed and retains a compact report with the failure category, attempt count and numeric service code when present. Raw account responses and exception URLs are never retained. The analysis/acquisition path uses the same observer.
 

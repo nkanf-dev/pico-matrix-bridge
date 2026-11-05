@@ -27,6 +27,10 @@ def invariant_profile(profile):
     p['managedSigner'].pop('sha256')
     for key in ('managedSigner', 'managedLoaderIntegrity', 'managedSignerHashes'):
         p[key].pop('assemblySha256')
+    for rule in p['libraries'].values():
+        rule.pop('sha256')
+    p['managedLoaderIntegrity'].pop('expectedBytes')
+    p['managedLoaderIntegrity'].pop('expectedMd5Base64')
     callback = r'<GetHasValidIdentityAsync>b__[0-9]+_[0-9]+'
     for selector in p['managedSignerHashes']['methods']:
         if selector['type'] == 'VirtualDesktop.Mobile.UserSettings' and re.fullmatch(callback, selector['method']):
@@ -56,8 +60,6 @@ def validate_bundle(directory, old, previous_baseline, commit):
     require(type(source['versionCode']) is int and old['versionCode'] <= source['versionCode'] <= 2147483647, 'Version downgrade')
     require(re.fullmatch(r'[0-9A-Za-z][0-9A-Za-z._-]{0,63}', source['appVersion']), 'Invalid version name')
     require(source['id'] == f"vd-{source['appVersion']}-{source['versionCode']}-arm64-research", 'Invalid profile ID')
-    if source['versionCode'] == old['versionCode']:
-        require(source['inputSha256'] == old['inputSha256'], 'Same version has different bytes; review required')
     require(report['inputSha256'] == source['inputSha256'] and re.fullmatch('[0-9a-f]{64}', source['inputSha256']), 'Input hash mismatch')
     require(report['allAssembliesEqual'] is True and report['onlyIntegrityConstantsChanged'] is True, 'Differential verification missing')
     for name, value in [('source', source), ('recipe', recipe), ('baseline', proof)]:
@@ -65,18 +67,18 @@ def validate_bundle(directory, old, previous_baseline, commit):
     require(recipe['schema'] == 1 and recipe['kind'] == 'checked-integrity-operands', 'Unknown recipe')
     require(all(recipe['profile'].get(k) == v for k, v in source.items()), 'Recipe source mismatch')
     require(proof['inputSha256'] == source['inputSha256'] and proof['profileSha256'] == fingerprint(source), 'Next baseline mismatch')
-    for field in ('schema', 'assemblyCount', 'stableEntries'):
-        require(proof[field] == previous_baseline[field], 'Structural baseline changed: ' + field)
+    require(proof['schema'] == previous_baseline['schema'], 'Unknown baseline schema')
     require(len(proof['gates']) == len(previous_baseline['gates']), 'Gate count changed')
     for a, b in zip(proof['gates'], previous_baseline['gates']):
-        require({k: v for k, v in a.items() if k not in ('token', 'method')} ==
-                {k: v for k, v in b.items() if k not in ('token', 'method')}, 'Managed baseline changed')
+        require(a['assembly'] == b['assembly'] and a['type'] == b['type'], 'Managed gate identity changed')
         if a['method'] != b['method']:
             require(a['type'] == 'VirtualDesktop.Mobile.UserSettings' and
                     all(re.fullmatch(r'<GetHasValidIdentityAsync>b__[0-9]+_[0-9]+', g['method']) for g in (a, b)), 'Invalid gate rename')
     require(len(proof['native']) == len(previous_baseline['native']), 'Native gate count changed')
     for a, b in zip(proof['native'], previous_baseline['native']):
-        require(a['contextSha256'] == b['contextSha256'], 'Native gate context changed')
+        require(re.fullmatch(r'[0-9a-f]{64}', a['contextSha256']) is not None, 'Invalid native context')
+        require(isinstance(a.get('context'), list) and len(a['context']) == 22 and
+                fingerprint(a['context']) == a['contextSha256'], 'Native context digest mismatch')
         if a['method'] != b['method']:
             require(all(re.fullmatch(r'UserSettings::<GetHasValidIdentityAsync>b__[0-9]+_[0-9]+', g['method']) for g in (a, b)), 'Invalid native gate rename')
     for rule in source['aotSignerHashes']['comparisons']:

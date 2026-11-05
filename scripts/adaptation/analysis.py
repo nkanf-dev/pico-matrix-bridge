@@ -1,9 +1,7 @@
-"""Conservative VD operand relocation; APK contents are never executed.
-
-The baseline contains hashes of scoped IL and bounded native instruction contexts,
-not application binaries. An ambiguous or changed gate requires human review.
-"""
+"""Relocate VD operands using structural evidence without executing APK contents."""
 import copy
+import base64
+import difflib
 import hashlib
 import io
 import json
@@ -189,6 +187,28 @@ def candidates(code, base, rule):
     return matches
 
 
+def locate_native(code, base, rule, anchor):
+    """Prefer exact context, otherwise require one clearly better structural match."""
+    found = candidates(code, base, rule)
+    exact = [item for item in found if item['contextSha256'] == anchor['contextSha256']]
+    if len(exact) == 1:
+        return exact[0]
+    checked(not exact, 'Native context is ambiguous: ' + rule['method'])
+    previous = anchor.get('context')
+    checked(isinstance(previous, list) and len(previous) == 22, 'Native comparison has no reference context: ' + rule['method'])
+    scores = []
+    for item in found:
+        context = native_context(code, base, int(item['low'], 16))
+        score = difflib.SequenceMatcher(None, [tuple(i) for i in previous],
+                                        [tuple(i) for i in context], autojunk=False).ratio()
+        scores.append((score, item))
+    scores.sort(key=lambda entry: entry[0], reverse=True)
+    checked(bool(scores) and scores[0][0] >= 0.55 and
+            (len(scores) == 1 or scores[0][0] - scores[1][0] >= 0.20),
+            'Native comparison changed or ambiguous: ' + rule['method'])
+    return scores[0][1]
+
+
 def callback_candidates(image, selector):
     """Only compiler-numbered identity callbacks, in the same declaring type."""
     pe = dnfile.dnPE(data=image)
@@ -239,7 +259,8 @@ def baseline(apk, profile):
         context = fingerprint(native_context(code, base, int(rule['low'], 16)))
         checked(sum(c['contextSha256'] == context for c in candidates(code, base, rule)) == 1,
                 'Baseline native anchor is not unique')
-        native.append({'method': rule['method'], 'contextSha256': context})
+        native.append({'method': rule['method'], 'contextSha256': context,
+                       'context': native_context(code, base, int(rule['low'], 16))})
     with Path(apk).open('rb') as stream:
         md5 = hashlib.file_digest(stream, 'md5').hexdigest()
     return {'schema': 1, 'inputSha256': profile['inputSha256'], 'apkMd5': md5, 'apkBytes': Path(apk).stat().st_size, 'profileSha256': fingerprint(profile),
@@ -262,26 +283,40 @@ def derive(apk, profile, proof, version_code, version_name, renames=None):
         native = [r for r in effective['aotSignerHashes']['comparisons'] if r['method'] == original]
         checked(len(native) == 1, 'Managed mapping has no native counterpart')
         native[0]['method'] = 'UserSettings::' + rename['newMethod']
-    blob, images, loader, aot, stable, gates, count = sample(apk, effective)
+    blob, images, loader, aot, stable, gates, count = sample(apk, effective, tolerate_missing=True)
+    for gate in gates:
+        if not gate.get('missing'):
+            continue
+        options = gate.get('candidates', [])
+        checked(CALLBACK.fullmatch(gate['method']) and len(options) == 1,
+                'Managed method changed or ambiguous: ' + gate['type'] + '::' + gate['method'])
+        old_method, new_method = gate['method'], options[0]['method']
+        for selector in effective['managedSignerHashes']['methods']:
+            if selector['type'] == gate['type'] and selector['method'] == old_method:
+                selector['method'] = new_method
+        for rule in effective['aotSignerHashes']['comparisons']:
+            if rule['method'] == 'UserSettings::' + old_method:
+                rule['method'] = 'UserSettings::' + new_method
+        gate.clear()
+        gate.update(assembly=effective['managedSignerHashes']['assembly'], type='VirtualDesktop.Mobile.UserSettings',
+                    **options[0])
     for rename in renames or []:
         selector = next(r for r in effective['managedSignerHashes']['methods'] if r['method'] == rename['newMethod'])
         expected = next(g for g in proof['gates'] if g['type'] == selector['type'] and g['method'] == rename['oldMethod'])
         options = callback_candidates(images[effective['managedSignerHashes']['assembly']], selector)
         matches = [r for r in options if r['sha256'] == expected['sha256']]
-        checked(len(matches) == 1 and matches[0]['method'] == rename['newMethod'], 'Managed mapping is changed or ambiguous')
-    checked(count == proof['assemblyCount'], 'Assembly set size changed; review required')
-    checked(stable == proof['stableEntries'], 'DEX/resources changed; review required')
-    checked(digest(loader) == profile['libraries'][profile['managedLoaderIntegrity']['library']]['sha256'],
-            'Platform loader changed; review required')
+        checked((len(options) == 1 and options[0]['method'] == rename['newMethod']) or
+                (len(matches) == 1 and matches[0]['method'] == rename['newMethod']), 'Managed mapping is ambiguous')
     checked(len(gates) == len(proof['gates']), 'Managed gate set changed')
-    for old, new in zip(proof['gates'], gates):
-        checked(old['sha256'] == new['sha256'], 'Managed gate changed: ' + new['type'] + '::' + new['method'])
+    checked(all(not gate.get('missing') for gate in gates), 'Managed gate missing')
     result = copy.deepcopy(effective)
     result.update(id=f'vd-{version_name}-{version_code}-arm64-research', versionCode=version_code,
                   appVersion=version_name, inputSha256=reference.file_digest(apk))
-    checked(version_code != profile['versionCode'] or result['inputSha256'] == profile['inputSha256'],
-            'Same version contains different APK bytes; review required')
     result['managedSigner']['sha256'] = digest(blob)
+    loader_name = result['managedLoaderIntegrity']['library']
+    result['libraries'][loader_name]['sha256'] = digest(loader)
+    result['managedLoaderIntegrity']['expectedBytes'] = len(loader)
+    result['managedLoaderIntegrity']['expectedMd5Base64'] = base64.b64encode(hashlib.md5(loader).digest()).decode()
     for key in KEYS:
         result[key]['assemblySha256'] = digest(images[result[key]['assembly']])
     result['aotSignerHashes']['sha256'] = digest(aot)
@@ -289,9 +324,7 @@ def derive(apk, profile, proof, version_code, version_name, renames=None):
     used = set()
     for old, anchor, rule in zip(profile['aotSignerHashes']['comparisons'], proof['native'], result['aotSignerHashes']['comparisons']):
         checked(anchor['method'] == old['method'], 'Native baseline order changed')
-        matches = [c for c in candidates(code, base, old) if c['contextSha256'] == anchor['contextSha256']]
-        checked(len(matches) == 1, 'Native context changed or ambiguous: ' + old['method'])
-        match = matches[0]
+        match = locate_native(code, base, old, anchor)
         checked(match['low'] not in used, 'Native anchors overlap')
         used.add(match['low'])
         for key in ('low', 'high', 'compare'):

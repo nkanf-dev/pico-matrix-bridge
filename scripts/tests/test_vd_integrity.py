@@ -60,7 +60,11 @@ class IntegrityRegression(unittest.TestCase):
         cert = (self.research/'adapted-signer.der').read_bytes()
         result, receipt = adapter.patch_store(self.store, cert, self.profile['managedSigner'], self.rule,
                                              self.loader, self.routed, self.profile['managedSignerHashes'])
-        self.assertEqual(receipt['unchangedAssemblyCount'], 182)
+        import io, struct
+        from elftools.elf.elffile import ELFFile
+        payload = ELFFile(io.BytesIO(self.store)).get_section_by_name('payload').data()
+        count = struct.unpack_from('<I', payload, 8)[0]
+        self.assertEqual(receipt['unchangedAssemblyCount'], count - 3)
         self.assertTrue(receipt['controlFlowUnchanged'])
         self.assertTrue(receipt['onlyIntegrityConstantsChanged'])
         self.assertEqual({p['assembly'] for p in receipt['patches']},

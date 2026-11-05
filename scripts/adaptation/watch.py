@@ -15,7 +15,7 @@ from observation import MetadataObservationError, download_info
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def previous_review(metadata):
+def previous_review(metadata, base_commit):
     """Avoid repeatedly downloading a rejected build while its evidence is retained."""
     if not os.environ.get('GH_TOKEN'):
         return False
@@ -34,7 +34,8 @@ def previous_review(metadata):
             if item.file_size > 65536:
                 continue
             report = json.loads(archive.read(item))
-            if report.get('state') == 'review-required' and report.get('observedMetadata') == metadata:
+            if (report.get('state') == 'review-required' and report.get('observedMetadata') == metadata
+                    and report.get('baseCommit') == base_commit):
                 return True
     return False
 
@@ -64,9 +65,10 @@ def main():
     require(info.version_code >= profile['versionCode'], 'Store offered an older build; review required')
     changed = (info.version_code != profile['versionCode'] or info.md5 != baseline['apkMd5'] or info.size != baseline['apkBytes'])
     state = 'pending' if changed or args.recheck else 'unchanged'
-    if changed and not args.recheck and previous_review(metadata):
+    base_commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
+    if changed and not args.recheck and previous_review(metadata, base_commit):
         state = 'review-required'
-    report = {'schema': 1, 'state': state, 'baseCommit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+    report = {'schema': 1, 'state': state, 'baseCommit': base_commit,
               'previousInputSha256': profile['inputSha256'], 'inputSha256': profile['inputSha256'],
               'observedVersionCode': info.version_code, 'observedMetadata': metadata, 'agentUsed': False}
     args.output.mkdir(parents=True)

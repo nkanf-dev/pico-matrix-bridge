@@ -1,5 +1,6 @@
 """No licensed binary is required for boundary tests; replay is opt-in."""
 import copy
+import io
 import importlib.util
 import json
 import os
@@ -7,6 +8,7 @@ from pathlib import Path
 import struct
 import sys
 import unittest
+import zipfile
 from unittest.mock import Mock, patch
 from types import SimpleNamespace
 
@@ -78,6 +80,25 @@ class MetadataObservation(unittest.TestCase):
         client.download_info.assert_not_called()
 
     @unittest.skipUnless(importlib.util.find_spec('pico_store_lab'), 'requires PICO SDK')
+    def test_old_review_is_not_reused_after_the_adaptation_code_changes(self):
+        import watch
+        metadata = {'versionCode': 10722}
+        report = {'state': 'review-required', 'baseCommit': 'old', 'observedMetadata': metadata}
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, 'w') as archive:
+            archive.writestr('report.json', json.dumps(report))
+        artifacts = {'artifacts': [{'expired': False, 'size_in_bytes': 100, 'id': 1, 'workflow_run': {'id': 2}}]}
+        run = {'path': '.github/workflows/adapt-vd.yml', 'head_branch': 'main'}
+        def invoke(args, **kwargs):
+            if '/actions/artifacts?name=' in args[-1]: return json.dumps(artifacts)
+            if '/actions/runs/' in args[-1]: return json.dumps(run)
+            return buffer.getvalue()
+        with patch.dict(os.environ, {'GH_TOKEN': 'test', 'GITHUB_REPOSITORY': 'example/repo'}), \
+                patch('watch.subprocess.check_output', side_effect=invoke):
+            self.assertTrue(watch.previous_review(metadata, 'old'))
+            self.assertFalse(watch.previous_review(metadata, 'new'))
+
+    @unittest.skipUnless(importlib.util.find_spec('pico_store_lab'), 'requires PICO SDK')
     def test_failed_watch_retains_safe_report_and_exits_as_failure(self):
         import tempfile
         import watch
@@ -129,6 +150,36 @@ class InputIdentity(unittest.TestCase):
 
 
 class CommitPolicy(unittest.TestCase):
+    def test_changed_dex_and_same_version_bytes_can_promote(self):
+        import tempfile
+        old = json.loads((ROOT / 'profiles/vd/client-1.34.25.0-10722-research.json').read_text())
+        previous = json.loads((ROOT / 'profiles/vd/adaptation-baseline.json').read_text())
+        source = copy.deepcopy(old)
+        source['inputSha256'] = 'a' * 64
+        recipe = {'schema': 1, 'kind': 'checked-integrity-operands', 'profile': copy.deepcopy(source)}
+        proof = copy.deepcopy(previous)
+        proof['inputSha256'] = source['inputSha256']
+        proof['profileSha256'] = policy.fingerprint(source)
+        proof['stableEntries']['classes.dex'] = 'b' * 64
+        proof['assemblyCount'] += 1
+        proof['gates'][0]['sha256'] = 'c' * 64
+        report = {'baseCommit': 'commit', 'previousInputSha256': old['inputSha256'],
+                  'state': 'verified', 'inputSha256': source['inputSha256'],
+                  'allAssembliesEqual': True, 'onlyIntegrityConstantsChanged': True}
+        for name, value in [('source', source), ('recipe', recipe), ('baseline', proof)]:
+            report[name + 'Sha256'] = policy.fingerprint(value)
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            for name, value in [('source', source), ('recipe', recipe), ('baseline', proof), ('report', report)]:
+                (directory / (name + '.json')).write_text(json.dumps(value))
+            self.assertEqual(policy.validate_bundle(directory, old, previous, 'commit')[0], source)
+            proof['native'][0]['context'][0][1] = 'tampered'
+            (directory / 'baseline.json').write_text(json.dumps(proof))
+            report['baselineSha256'] = policy.fingerprint(proof)
+            (directory / 'report.json').write_text(json.dumps(report))
+            with self.assertRaisesRegex(ValueError, 'context digest'):
+                policy.validate_bundle(directory, old, previous, 'commit')
+
     def test_only_relocation_fields_may_change(self):
         old = json.loads((ROOT / 'profiles/vd/client-1.34.22.0-research.json').read_text())
         new = json.loads((ROOT / 'profiles/vd/client-1.34.22.0-10709-research.json').read_text())
@@ -145,6 +196,11 @@ class CommitPolicy(unittest.TestCase):
         changed = copy.deepcopy(new)
         changed['managedSignerHashes']['methods'][0]['count'] = 0
         self.assertNotEqual(policy.invariant_profile(old), policy.invariant_profile(changed))
+        changed = copy.deepcopy(new)
+        changed['libraries'][changed['managedLoaderIntegrity']['library']]['sha256'] = 'f' * 64
+        changed['managedLoaderIntegrity']['expectedBytes'] += 8
+        changed['managedLoaderIntegrity']['expectedMd5Base64'] = 'updated'
+        self.assertEqual(policy.invariant_profile(old), policy.invariant_profile(changed))
 
     def test_stale_and_unverified_results_rejected(self):
         import tempfile
@@ -172,7 +228,7 @@ class NativeLocator(unittest.TestCase):
     def setUp(self):
         import analysis
         self.module = analysis
-        self.rule = {'expected': 1778352252, 'low': '0x1000', 'high': '0x1004', 'compare': '0x1008'}
+        self.rule = {'method': 'Test::.ctor', 'expected': 1778352252, 'low': '0x1000', 'high': '0x1004', 'compare': '0x1008'}
         words = [0xd503201f] * 40
         words[12:15] = [0x52800008 | ((self.rule['expected'] & 65535) << 5),
                         0x72a00008 | ((self.rule['expected'] >> 16) << 5), 0x6b08001f]
@@ -194,25 +250,50 @@ class NativeLocator(unittest.TestCase):
         self.assertNotEqual(self.module.candidates(changed, 0x8000, self.rule)[0]['contextSha256'],
                             self.module.candidates(self.code, 0x8000, self.rule)[0]['contextSha256'])
 
+    def test_unique_changed_context_is_relocated_without_a_model(self):
+        anchor = self.module.candidates(self.code, 0x8000, self.rule)[0]
+        anchor['context'] = self.module.native_context(self.code, 0x8000, int(anchor['low'], 16))
+        changed = bytearray(self.code)
+        struct.pack_into('<I', changed, 60, 0x54000041)
+        match = self.module.locate_native(changed, 0x8000, self.rule, anchor)
+        self.assertEqual(match['low'], '0x8030')
+        self.assertNotEqual(match['contextSha256'], anchor['contextSha256'])
+
+    def test_equally_good_changed_candidates_do_not_choose_an_arbitrary_offset(self):
+        anchor = self.module.candidates(self.code, 0x8000, self.rule)[0]
+        anchor['context'] = self.module.native_context(self.code, 0x8000, int(anchor['low'], 16))
+        changed = bytearray(self.code)
+        struct.pack_into('<I', changed, 60, 0x54000041)
+        with self.assertRaisesRegex(ValueError, 'ambiguous'):
+            self.module.locate_native(changed * 2, 0x8000, self.rule, anchor)
+
+    def test_legacy_baseline_with_no_context_keeps_exact_match_support(self):
+        anchor = self.module.candidates(self.code, 0x8000, self.rule)[0]
+        self.assertEqual(self.module.locate_native(self.code, 0x8000, self.rule, anchor)['low'], '0x8030')
+        changed = bytearray(self.code)
+        struct.pack_into('<I', changed, 60, 0x54000041)
+        with self.assertRaisesRegex(ValueError, 'no reference context'):
+            self.module.locate_native(changed, 0x8000, self.rule, anchor)
+
 
 @unittest.skipUnless(DEPS and os.environ.get('VD_REPLAY_OLD_APK') and os.environ.get('VD_REPLAY_NEW_APK'), 'requires two retained VD inputs')
 class HistoricalReplay(unittest.TestCase):
     def test_10703_to_10709_matches_reviewed_recipe(self):
         from analysis import baseline, derive
+        from compile import compile_recipe
         old = json.loads((ROOT / 'profiles/vd/client-1.34.22.0-research.json').read_text())
         proof = baseline(Path(os.environ['VD_REPLAY_OLD_APK']), old)
         source, recipe = derive(Path(os.environ['VD_REPLAY_NEW_APK']), old, proof, 10709, '1.34.22.0')
         self.assertEqual(source, json.loads((ROOT / 'profiles/vd/client-1.34.22.0-10709-research.json').read_text()))
-        current = json.loads((ROOT / 'profiles/vd/recipe.json').read_text())
-        self.assertEqual(recipe['store'], current['store']); self.assertEqual(recipe['aot'], current['aot'])
+        expected = compile_recipe(Path(os.environ['VD_REPLAY_NEW_APK']), source)
+        self.assertEqual(recipe, expected)
         proof['gates'][0]['sha256'] = '0' * 64
-        with self.assertRaisesRegex(ValueError, 'Managed gate changed'):
-            derive(Path(os.environ['VD_REPLAY_NEW_APK']), old, proof, 10709, '1.34.22.0')
+        self.assertEqual(derive(Path(os.environ['VD_REPLAY_NEW_APK']), old, proof, 10709, '1.34.22.0'), (source, recipe))
 
-    def test_compiler_callback_rename_requires_identical_unique_body(self):
-        from analysis import derive, fingerprint
+    def test_compiler_callback_rename_requires_unique_method(self):
+        from analysis import baseline, derive, fingerprint
         old = json.loads((ROOT / 'profiles/vd/client-1.34.22.0-10709-research.json').read_text())
-        proof = json.loads((ROOT / 'profiles/vd/adaptation-baseline.json').read_text())
+        proof = baseline(Path(os.environ['VD_REPLAY_NEW_APK']), old)
         actual = old['managedSignerHashes']['methods'][2]['method']
         previous = '<GetHasValidIdentityAsync>b__473_0'
         old['managedSignerHashes']['methods'][2]['method'] = previous

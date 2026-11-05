@@ -67,7 +67,7 @@ class PortableProfileRegression(unittest.TestCase):
             result[name]=lz4.block.decompress(compressed[12:],uncompressed_size=uncompressed) if magic==0x5a4c4158 else compressed
         return result
 
-    def test_every_managed_assembly_matches_python_including_unchanged_182(self):
+    def test_every_managed_assembly_matches_python(self):
         p=self.profile
         with zipfile.ZipFile(self.apk) as apk:
             store=apk.read(p['managedSigner']['entry']);loader=apk.read(p['managedLoaderIntegrity']['library'])
@@ -75,12 +75,12 @@ class PortableProfileRegression(unittest.TestCase):
         expected,receipt=self.source.patch_store(store,self.certificate,p['managedSigner'],p['managedLoaderIntegrity'],loader,routed,p['managedSignerHashes'])
         actual=(self.work/'java/managed-store.so').read_bytes()
         old=self.assemblies(store);reference=self.assemblies(expected);prepared=self.assemblies(actual)
-        self.assertEqual(reference.keys(),prepared.keys());self.assertEqual(len(prepared),185)
+        self.assertEqual(old.keys(),prepared.keys());self.assertEqual(reference.keys(),prepared.keys())
         changed={name for name in old if old[name]!=prepared[name]}
         self.assertEqual(changed,{p[key]['assembly'] for key in ['managedSigner','managedLoaderIntegrity','managedSignerHashes']})
         for name in prepared:
             with self.subTest(assembly=name):self.assertEqual(reference[name],prepared[name])
-        receipt.update(portableStoreSha256=self.source.digest(actual),pythonStoreSha256=self.source.digest(expected),all185AssembliesEqual=True,
+        receipt.update(portableStoreSha256=self.source.digest(actual),pythonStoreSha256=self.source.digest(expected),allAssembliesEqual=True,
                        certificateSha256=self.source.digest(self.certificate))
         (self.work/'differential-evidence.json').write_text(json.dumps(receipt,indent=2)+'\n')
 
