@@ -1,5 +1,6 @@
 """No licensed binary is required for boundary tests; replay is opt-in."""
 import copy
+import hashlib
 import io
 import importlib.util
 import json
@@ -120,6 +121,19 @@ class MetadataObservation(unittest.TestCase):
 
 @unittest.skipUnless(DEPS, 'requires pinned adaptation dependencies')
 class InputIdentity(unittest.TestCase):
+    def test_certificate_literal_is_selected_by_the_current_apk_signer(self):
+        import analysis
+        from dncil.clr.token import StringToken
+        certificate = b'current-signer'
+        pe = SimpleNamespace(net=SimpleNamespace(user_strings=SimpleNamespace(
+            get=lambda _: SimpleNamespace(value=certificate.hex()))))
+        instruction = SimpleNamespace(opcode=SimpleNamespace(name='ldstr'), operand=StringToken(0x70000001))
+        with patch('analysis.dnfile.dnPE', return_value=pe), \
+                patch('analysis.method', return_value=(None, SimpleNamespace(instructions=[instruction]))):
+            self.assertEqual(analysis.embedded_signer(b'image', {}, hashlib.sha256(certificate).hexdigest()), certificate)
+            with self.assertRaisesRegex(ValueError, 'missing or ambiguous'):
+                analysis.embedded_signer(b'image', {}, '0' * 64)
+
     def test_tool_version_is_not_selected_from_runner_preinstalls(self):
         import tempfile
         from run import tool
@@ -140,13 +154,36 @@ class InputIdentity(unittest.TestCase):
         certificate = 'Signer #1 certificate SHA-256 digest: ' + 'a' * 64 + '\n'
         with patch('run.tool', side_effect=lambda name: name), patch('run.subprocess.run') as process:
             process.side_effect = [SimpleNamespace(stdout=package), SimpleNamespace(stdout=certificate)]
-            self.assertEqual(identity(Path('sample.apk'), profile), (10709, '1.34.22.0'))
+            self.assertEqual(identity(Path('sample.apk'), profile), (10709, '1.34.22.0', 'a' * 64))
+            process.side_effect = [SimpleNamespace(stdout=package), SimpleNamespace(stdout='Signer #1 certificate SHA-256 digest: ' + 'b' * 64 + '\n')]
+            self.assertEqual(identity(Path('sample.apk'), profile), (10709, '1.34.22.0', 'b' * 64))
             process.side_effect = [SimpleNamespace(stdout='untrusted input')]
             with self.assertRaisesRegex(InputIdentityError, '^Cannot parse APK package metadata$'):
                 identity(Path('sample.apk'), profile)
             process.side_effect = [SimpleNamespace(stdout=package), SimpleNamespace(stdout='untrusted input')]
             with self.assertRaisesRegex(InputIdentityError, '^Cannot parse APK publisher digest$'):
                 identity(Path('sample.apk'), profile)
+
+    def test_agent_native_only_candidate_reaches_the_trusted_compiler(self):
+        from run import agent_candidate
+        anchor = {'method': 'InputSystem::.ctor', 'low': '0x1000', 'high': '0x1004', 'compare': '0x1008'}
+        selected = {'disposition': 'equivalent', 'anchors': [anchor], 'managedMappings': []}
+        apk, profile, proof, work = Path('input'), {}, {}, Path('work')
+        with patch('run.diagnostic', return_value={'native': []}), patch('run.run_agent', return_value=selected), \
+                patch('run.derive', return_value=('source', 'recipe')) as compile_candidate:
+            agent, result = agent_candidate(apk, profile, proof, 10722, '1.34.25.0', work, 'ambiguous')
+            self.assertEqual(agent, selected)
+            self.assertEqual(result, ('source', 'recipe'))
+            compile_candidate.assert_called_once_with(apk, profile, proof, 10722, '1.34.25.0', [], [anchor], None)
+
+    def test_agent_review_required_cannot_promote_candidate(self):
+        from run import agent_candidate
+        with patch('run.diagnostic', return_value={}), \
+                patch('run.run_agent', return_value={'disposition': 'review-required', 'anchors': [{'method': 'x'}]}), \
+                patch('run.derive') as compile_candidate:
+            _, result = agent_candidate(Path('input'), {}, {}, 10722, '1', Path('work'), 'ambiguous')
+            self.assertIsNone(result)
+            compile_candidate.assert_not_called()
 
 
 class CommitPolicy(unittest.TestCase):
@@ -156,6 +193,11 @@ class CommitPolicy(unittest.TestCase):
         previous = json.loads((ROOT / 'profiles/vd/adaptation-baseline.json').read_text())
         source = copy.deepcopy(old)
         source['inputSha256'] = 'a' * 64
+        source['managedSigner']['originalCertificateSha256'] = 'd' * 64
+        source['managedSignerHashes']['originalJavaHash'] = 123456
+        source['managedSignerHashes']['originalX509Hash'] = -456789
+        for rule in source['aotSignerHashes']['comparisons']:
+            rule['expected'] = 123456 if rule['hash'] == 'java' else -456789
         recipe = {'schema': 1, 'kind': 'checked-integrity-operands', 'profile': copy.deepcopy(source)}
         proof = copy.deepcopy(previous)
         proof['inputSha256'] = source['inputSha256']
@@ -245,6 +287,16 @@ class NativeLocator(unittest.TestCase):
         changed = bytearray(self.code); struct.pack_into('<I', changed, 56, 0x6b09001f)
         self.assertEqual(self.module.candidates(changed, 0x8000, self.rule), [])
 
+    def test_changed_registers_and_instruction_spacing_are_located(self):
+        value, reg = self.rule['expected'], 12
+        words = [0xd503201f] * 40
+        words[12] = 0x52800000 | ((value & 65535) << 5) | reg
+        words[15] = 0x72a00000 | (((value >> 16) & 65535) << 5) | reg
+        words[19] = 0x6b00001f | (reg << 16) | (6 << 5)
+        found = self.module.candidates(struct.pack('<40I', *words), 0x8000, self.rule)
+        self.assertEqual([(x['low'], x['high'], x['compare']) for x in found],
+                         [('0x8030', '0x803c', '0x804c')])
+
     def test_gate_branch_polarity_changes_fingerprint(self):
         changed = bytearray(self.code); struct.pack_into('<I', changed, 60, 0x54000041)
         self.assertNotEqual(self.module.candidates(changed, 0x8000, self.rule)[0]['contextSha256'],
@@ -274,6 +326,40 @@ class NativeLocator(unittest.TestCase):
         struct.pack_into('<I', changed, 60, 0x54000041)
         with self.assertRaisesRegex(ValueError, 'no reference context'):
             self.module.locate_native(changed, 0x8000, self.rule, anchor)
+
+    def test_agent_candidate_must_be_a_real_matching_instruction_sequence(self):
+        anchor = self.module.candidates(self.code, 0x8000, self.rule)[0]
+        candidates = self.module.candidates(self.code * 2, 0x8000, self.rule)
+        choice = {'method': self.rule['method'], **{k: candidates[1][k] for k in ('low', 'high', 'compare')}}
+        self.assertEqual(self.module.locate_native(self.code * 2, 0x8000, self.rule, anchor, choice)['low'], candidates[1]['low'])
+        choice['compare'] = '0x8000'
+        with self.assertRaisesRegex(ValueError, 'not present'):
+            self.module.locate_native(self.code * 2, 0x8000, self.rule, anchor, choice)
+
+    def test_managed_method_range_disambiguates_identical_native_patterns(self):
+        anchor = self.module.candidates(self.code, 0x8000, self.rule)[0]
+        found = self.module.candidates(self.code * 2, 0x8000, self.rule)
+        second = int(found[1]['low'], 16)
+        result = self.module.locate_native(self.code * 2, 0x8000, self.rule, anchor,
+                                           method_range=(second - 16, second + 20))
+        self.assertEqual(result['low'], found[1]['low'])
+        outside = {'method': self.rule['method'], **{k: found[0][k] for k in ('low', 'high', 'compare')}}
+        with self.assertRaisesRegex(ValueError, 'not present'):
+            self.module.locate_native(self.code * 2, 0x8000, self.rule, anchor, outside,
+                                      (second - 16, second + 20))
+
+
+@unittest.skipUnless(DEPS, 'requires pinned adaptation dependencies')
+class MonoAotCallTable(unittest.TestCase):
+    def test_forward_and_backward_arm64_entries(self):
+        from mono_aot import decode_call_table
+        def branch(source, target):
+            return 0x94000000 | (((target - source) // 4) & 0x03ffffff)
+        table = struct.pack('<III', branch(0x8000, 0x8100), branch(0x8004, 0x7f00), 0xd503201f)
+        self.assertEqual(decode_call_table(table, 0x8000, 0x7e00, 0x8200), [0x8100, 0x7f00, None])
+        self.assertEqual(decode_call_table(table, 0x8000, 0x8000, 0x8200), [0x8100, None, None])
+        with self.assertRaisesRegex(ValueError, 'Incomplete'):
+            decode_call_table(b'\x01', 0x8000, 0, 0xffff)
 
 
 @unittest.skipUnless(DEPS and os.environ.get('VD_REPLAY_OLD_APK') and os.environ.get('VD_REPLAY_NEW_APK'), 'requires two retained VD inputs')

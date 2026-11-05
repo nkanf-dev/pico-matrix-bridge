@@ -201,13 +201,15 @@ def patch_aot_signer_hashes(image, certificate, rule):
         low, high, cmp = (offset(comparison[k]) for k in ('low', 'high', 'compare'))
         expected = comparison['expected'] & 0xffffffff
         replacement = hashes[comparison['hash']] & 0xffffffff
-        # MOVZ W8,#lo ; MOVK W8,#hi,LSL#16 ; CMP W0,W8.
-        # LLVM folds the UserSettings subtraction into this comparison and
-        # merges the two identical Keyboard checks into one native comparison.
-        checked(struct.unpack_from('<I', image, cmp)[0] == 0x6b08001f, 'native comparison changed')
+        low_word, high_word, cmp_word = (struct.unpack_from('<I', image, at)[0] for at in (low, high, cmp))
+        register = low_word & 31
+        left, right = (cmp_word >> 5) & 31, (cmp_word >> 16) & 31
+        checked(register != 31 and cmp_word & 0xffe0fc1f == 0x6b00001f and
+                register in (left, right) and left != right and 31 not in (left, right), 'native comparison changed')
         for at, opcode, shift in ((low, 0x52800008, 0), (high, 0x72a00008, 16)):
             checked(at not in touched, 'overlapping native constants')
             touched.add(at)
+            opcode = (opcode & ~31) | register
             before = opcode | (((expected >> shift) & 0xffff) << 5)
             checked(struct.unpack_from('<I', image, at)[0] == before, 'native signer constant changed')
             after = opcode | (((replacement >> shift) & 0xffff) << 5)

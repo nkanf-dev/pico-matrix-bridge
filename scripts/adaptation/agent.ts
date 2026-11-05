@@ -43,9 +43,8 @@ export default function (pi: ExtensionAPI) {
       }
       if ((params.managedMappings ?? []).some(mapping => !(evidence['callback-mapping'] ?? []).some((group: any) =>
         group.oldMethod === mapping.oldMethod && group.candidates.filter((candidate: any) =>
-          candidate.sha256 === group.expectedSha256).length === 1 && group.candidates.some((candidate: any) =>
-          candidate.method === mapping.newMethod && candidate.sha256 === group.expectedSha256)))) {
-        throw new Error('Managed mapping must name the unique supplied matching fingerprint.');
+          candidate.method === mapping.newMethod).length === 1))) {
+        throw new Error('Managed mapping must name a supplied candidate.');
       }
       writeFileSync(output + '.pending', JSON.stringify({ schema: 1, ...params, toolCalls: calls }) + '\n', { flag: 'wx', mode: 0o600 });
       renameSync(output + '.pending', output);

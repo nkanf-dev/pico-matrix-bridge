@@ -12,8 +12,8 @@ import sys
 import urllib.request
 import zipfile
 
-from analysis import (ROOT, KEYS, baseline, candidates, checked, derive, fingerprint,
-                      native_context, sample, text_section)
+from analysis import (ROOT, KEYS, baseline, callback_evidence, candidates, checked, derive, embedded_signer,
+                      fingerprint, native_context, reference, sample, text_section)
 from agent import run_agent
 from observation import MetadataObservationError, download_info
 
@@ -52,8 +52,8 @@ def identity(apk, profile):
                                  capture_output=True, text=True, check=True).stdout
     certificates = re.findall(r'^Signer #[0-9]+ certificate SHA-256 digest: ([0-9a-f]{64})$', signatures, re.M)
     identity_checked(bool(certificates), 'Cannot parse APK publisher digest')
-    identity_checked(certificates == [profile['managedSigner']['originalCertificateSha256']], 'APK publisher changed')
-    return int(match[2]), match[3]
+    identity_checked(len(certificates) == 1, 'APK has multiple publishers')
+    return int(match[2]), match[3], certificates[0]
 
 
 def observed():
@@ -92,16 +92,19 @@ def acquire(client, target, version, apk):
     return info
 
 
-def diagnostic(apk, profile, proof, reason):
+def diagnostic(apk, profile, proof, reason, publisher_sha256=None):
     result = {'index': {'ids': ['failure', 'baseline'], 'purpose': 'Read evidence, diagnose uncertainty; do not bypass checks'},
               'failure': {'reason': reason}, 'baseline': proof}
     try:
-        _, _, _, aot, _, gates, _ = sample(apk, profile, tolerate_missing=True)
+        _, images, _, aot, _, gates, _ = sample(apk, profile, tolerate_missing=True)
         result['managed'] = gates
+        digest = publisher_sha256 or profile['managedSigner']['originalCertificateSha256']
+        signer = embedded_signer(images[profile['managedSigner']['assembly']], profile['managedSigner'], digest)
+        signer_hashes = reference.certificate_hashes(signer)
         code, base = text_section(aot)
         native = []
         for rule in profile['aotSignerHashes']['comparisons']:
-            found = candidates(code, base, rule)
+            found = candidates(code, base, dict(rule, expected=signer_hashes[rule['hash']]))
             native.append({'method': rule['method'], 'candidates': [dict(c, context=native_context(code, base, int(c['low'], 16))) for c in found[:8]]})
         result['native'] = native
         result['index']['ids'] += ['managed', 'native']
@@ -110,11 +113,25 @@ def diagnostic(apk, profile, proof, reason):
             result['callback-mapping'] = [{
                 'oldMethod': g['method'], 'type': g['type'],
                 'expectedSha256': next(b['sha256'] for b in proof['gates'] if b['type'] == g['type'] and b['method'] == g['method']),
-                'candidates': g['candidates']} for g in missing]
-            result['index'] = {'ids': ['callback-mapping'], 'task': 'Propose managedMappings only for a unique equal fingerprint. The trusted validator will recheck all native and managed gates independently.'}
+                'candidates': [dict(candidate, **callback_evidence(images[g['assembly']],
+                    {'type': g['type'], 'method': candidate['method']})) for candidate in g['candidates']]} for g in missing]
+            result['index']['ids'].append('callback-mapping')
+            result['index']['task'] = 'Select managed mappings and native anchors only from supplied candidates; the compiler independently rechecks actual operands.'
     except Exception:
         result['failure']['extraction'] = 'Partial evidence only; do not infer equivalence'
     return result
+
+
+def agent_candidate(apk, profile, proof, version, name, work, reason, publisher_sha256=None):
+    """Re-run the trusted compiler with selected evidence, never model-written code."""
+    agent = run_agent(diagnostic(apk, profile, proof, reason, publisher_sha256), work)
+    mappings, anchors = agent.get('managedMappings', []), agent.get('anchors', [])
+    if agent.get('disposition') != 'equivalent' or not (mappings or anchors):
+        return agent, None
+    try:
+        return agent, derive(apk, profile, proof, version, name, mappings, anchors, publisher_sha256)
+    except ValueError:
+        return agent, None
 
 
 def verify_candidate(apk, profile, recipe, work):
@@ -180,39 +197,36 @@ def main():
             apk = downloaded
         print('Checking APK package and publisher', flush=True)
         report['state'] = 'identifying'
-        version, name = identity(apk, profile)
+        version, name, publisher_sha256 = identity(apk, profile)
         if download_metadata is not None:
             identity_checked(version == download_metadata.version_code, 'APK version code differs from official download metadata')
             identity_checked(name == download_metadata.version, 'APK version name differs from official download metadata')
-        report.update(state='analyzing', observedVersionCode=version)
+        report.update(state='analyzing', observedVersionCode=version, publisherSha256=publisher_sha256)
         checked(version >= profile['versionCode'], 'Refusing version downgrade')
         print('Relocating checked profile operands', flush=True)
         try:
-            proposed, recipe = derive(apk, profile, proof, version, name)
+            proposed, recipe = derive(apk, profile, proof, version, name, publisher_sha256=publisher_sha256)
         except ValueError as error:
             report.update(state='review-required', reason=str(error))
             accepted = False
             if os.environ.get('MIKUMIKU_API_KEY'):
                 report['agentUsed'] = True
-                report['agent'] = run_agent(diagnostic(apk, profile, proof, str(error)), args.work / 'agent')
-                mappings = report['agent'].get('managedMappings', [])
-                if mappings:
-                    try:
-                        # The model's disposition and raw addresses confer no authority.
-                        proposed, recipe = derive(apk, profile, proof, version, name, mappings)
-                        accepted = True
-                        report.update(state='analyzing', agentMappingVerified=True)
-                        report.pop('reason', None)
-                    except ValueError:
-                        report['candidateRejected'] = True
+                report['agent'], candidate = agent_candidate(apk, profile, proof, version, name, args.work / 'agent', str(error), publisher_sha256)
+                if candidate is not None:
+                    proposed, recipe = candidate
+                    accepted = True
+                    report.update(state='analyzing', agentMappingVerified=True)
+                    report.pop('reason', None)
+                elif report['agent'].get('disposition') == 'equivalent':
+                    report['candidateRejected'] = True
             if not accepted:
                 raise RuntimeError('Build requires review; the current profile remains unchanged') from None
         if args.force_agent and not report['agentUsed']:
-            evidence = diagnostic(apk, profile, proof, 'Deterministic validation passed; independent diagnostic replay')
+            evidence = diagnostic(apk, profile, proof, 'Deterministic validation passed; independent diagnostic replay', publisher_sha256)
             report['agentUsed'] = True
             report['agent'] = run_agent(evidence, args.work / 'agent')
             # Agent approval is not a gate. Recompute using the untouched sample and trusted rules.
-            checked(derive(apk, profile, proof, version, name) == (proposed, recipe), 'Non-deterministic candidate')
+            checked(derive(apk, profile, proof, version, name, publisher_sha256=publisher_sha256) == (proposed, recipe), 'Non-deterministic candidate')
         report['state'] = 'validating'
         print('Running reference and JVM differential checks', flush=True)
         differential = verify_candidate(apk, proposed, recipe, args.work)

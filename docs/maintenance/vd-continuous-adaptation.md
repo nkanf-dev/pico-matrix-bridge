@@ -8,7 +8,7 @@
 flowchart TD
   A[Official PICO download metadata] --> B{New build or explicit recheck?}
   B -- No --> C[Check whether current input is already published]
-  B -- Yes --> D[Download once and verify size, MD5, package and publisher]
+  B -- Yes --> D[Download once and verify size, MD5, package and APK signature]
   D --> E[Relocate managed operands and unique native contexts]
   E -- Checks pass --> F[Recompile and compare Python with JVM output]
   E -- Cannot locate --> G[OMP reads bounded evidence]
@@ -21,13 +21,13 @@ flowchart TD
   K --> L[Existing signing environment verifies, signs and publishes]
 ```
 
-The automatic path updates input hashes, version metadata, loader digest/size and checked operand locations. It preserves the package strategy, original certificate, loader routing, declaring types and entry points, constant values, expected call sites and patch counts. The compiler retains its original-byte and structural checks. The JVM differential checks cover every assembly and the routed loader/native library against the Python reference, without requiring a fixed assembly count.
+The automatic path updates input hashes, version metadata, the actual APK signer, signer-derived constants, loader digest/size and checked operand locations. It preserves the package strategy, loader routing, declaring types and entry points, expected call sites and patch counts. The APK signature must be valid and the startup certificate literal must match its actual signer; the historic publisher certificate is not pinned. The compiler retains its original-byte and structural checks. The JVM differential checks cover every assembly and the routed loader/native library against the Python reference, without requiring a fixed assembly count.
 
-The baseline records five scoped managed methods and 22 instructions around each native comparison. A compiler-numbered identity callback is renamed automatically when the declaring type has exactly one candidate. Native comparisons use an exact context when available; otherwise the locator selects a sufficiently similar candidate only when it is clearly distinct from alternatives. A changed DEX, resource, assembly count, loader bytes or managed fingerprint alone does not stop adaptation. The locator is not a proof of whole-program equivalence. A missing method, unsupported loader routing or ambiguous native location still requires review.
+The baseline records five scoped managed methods and 22 instructions around each native comparison. A compiler-numbered identity callback is renamed automatically when the declaring type has exactly one candidate. For supported ARM64 Mono AOT layouts, the locator resolves each managed method token through the AOT call table and searches inside that method. It handles different registers and instruction spacing. When the table format is unavailable, it uses exact or distinguishable similar instruction contexts. A changed DEX, resource, assembly count, loader bytes or managed fingerprint alone does not stop adaptation. A missing method, unsupported loader routing or unresolved native location still requires review. These checks do not prove whole-program equivalence.
 
 ## Agent
 
-The runtime is OMP `18.1.17` with `mikumiku-openai/glm-5.3-flash` using the configured OpenAI-compatible endpoint. Deterministic relocation makes no model call, including a unique callback rename. If relocation fails, the agent may inspect bounded evidence; all candidate output is checked independently before use. A model's equivalence claim never overrides a failed deterministic check. Changes to the adapter algorithm remain code changes.
+The runtime is OMP `18.1.17` with `mikumiku-openai/glm-5.3-flash` using the configured OpenAI-compatible endpoint. Deterministic relocation makes no model call, including a unique callback rename. If relocation fails, the agent may select managed methods and native comparisons from bounded evidence extracted from the APK. Each selected location is independently rediscovered in that APK, then compiled and subjected to the same Python/JVM differential checks. Missing, invented or overlapping locations cannot be published. The differential checks prove consistent patch construction, not whole-program semantic equivalence.
 
 OMP runs with an isolated home, no sessions, rules, skills, LSP, PTY or built-in tools. Its explicit extension provides only `read_evidence` and `submit_candidate`. It has at most 12 tool executions, 4,096 output tokens per response and a 180-second agent budget (210-second process cutoff). It receives no PICO session, GitHub write token or signing variables. Its raw traces are discarded. Only a bounded structured report is retained.
 

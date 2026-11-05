@@ -8,11 +8,11 @@ const runtimeRequire = createRequire(new URL('./runtime/package.json', import.me
 const { z } = await import(runtimeRequire.resolve('@oh-my-pi/omptype/zod'));
 
 // Exercise trusted tool handlers without a provider, key or application binary.
-function fixture() {
+function fixture(evidence: any = { index: ['gate'], gate: { changed: true } }) {
   const work = mkdtempSync(join(tmpdir(), 'vd-agent-test-'));
   process.env.VD_AGENT_EVIDENCE = join(work, 'evidence.json');
   process.env.VD_AGENT_OUTPUT = join(work, 'candidate.json');
-  writeFileSync(process.env.VD_AGENT_EVIDENCE, JSON.stringify({ index: ['gate'], gate: { changed: true } }));
+  writeFileSync(process.env.VD_AGENT_EVIDENCE, JSON.stringify(evidence));
   const tools: Record<string, any> = {};
   register({ zod: z, on() {}, registerTool(tool: any) { tools[tool.name] = tool; } } as any);
   return { work, tools, output: process.env.VD_AGENT_OUTPUT };
@@ -49,7 +49,7 @@ describe('bounded evidence tools', () => {
         anchors: [{ method: 'fake', low: '0x1000', high: '0x1004', compare: '0x1008' }] };
       await expect(f.tools.submit_candidate.execute('1', value)).rejects.toThrow('not supplied');
       await expect(f.tools.submit_candidate.execute('2', { ...value, anchors: [], managedMappings: [
-        { oldMethod: 'missing', newMethod: 'invented' }] })).rejects.toThrow('unique supplied');
+        { oldMethod: 'missing', newMethod: 'invented' }] })).rejects.toThrow('supplied candidate');
       expect(existsSync(f.output)).toBe(false);
     } finally { rmSync(f.work, { recursive: true }); }
   });
@@ -58,6 +58,21 @@ describe('bounded evidence tools', () => {
     try {
       for (let n = 0; n < 12; n++) await f.tools.read_evidence.execute('1', { id: 'gate' });
       await expect(f.tools.read_evidence.execute('1', { id: 'gate' })).rejects.toThrow('budget exhausted');
+    } finally { rmSync(f.work, { recursive: true }); }
+  });
+  test('observed changed managed and native candidates can be submitted together', async () => {
+    const native = { method: 'InputSystem::.ctor', low: '0x1000', high: '0x1004', compare: '0x1008' };
+    const mapping = { oldMethod: '<GetHasValidIdentityAsync>b__1_0', newMethod: '<GetHasValidIdentityAsync>b__2_0' };
+    const f = fixture({ index: ['native', 'callback-mapping'],
+      native: [{ method: native.method, candidates: [native] }],
+      'callback-mapping': [{ oldMethod: mapping.oldMethod, expectedSha256: 'old',
+        candidates: [{ method: mapping.newMethod, sha256: 'changed' }] }] });
+    try {
+      await f.tools.submit_candidate.execute('1', { disposition: 'equivalent', rationale: 'observed candidates',
+        evidenceIds: ['native', 'callback-mapping'], anchors: [native], managedMappings: [mapping] });
+      const result = JSON.parse(readFileSync(f.output, 'utf8'));
+      expect(result.anchors).toEqual([native]);
+      expect(result.managedMappings).toEqual([mapping]);
     } finally { rmSync(f.work, { recursive: true }); }
   });
 });
