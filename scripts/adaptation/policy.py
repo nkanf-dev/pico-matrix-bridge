@@ -34,13 +34,14 @@ def invariant_profile(profile):
     p['managedLoaderIntegrity'].pop('expectedMd5Base64')
     p['managedSignerHashes'].pop('originalJavaHash')
     p['managedSignerHashes'].pop('originalX509Hash')
-    callback = r'<GetHasValidIdentityAsync>b__[0-9]+_[0-9]+'
+    identity_methods = set()
     for selector in p['managedSignerHashes']['methods']:
-        if selector['type'] == 'VirtualDesktop.Mobile.UserSettings' and re.fullmatch(callback, selector['method']):
+        if selector['type'] == 'VirtualDesktop.Mobile.UserSettings':
+            identity_methods.add('UserSettings::' + selector['method'])
             selector['method'] = '<identity-callback>'
     p['aotSignerHashes'].pop('sha256')
     for rule in p['aotSignerHashes']['comparisons']:
-        if re.fullmatch('UserSettings::' + callback, rule['method']):
+        if rule['method'] in identity_methods:
             rule['method'] = 'UserSettings::<identity-callback>'
         for key in ('low', 'high', 'compare', 'methodToken', 'expected'):
             rule.pop(key)
@@ -78,14 +79,14 @@ def validate_bundle(directory, old, previous_baseline, commit):
         require(a['assembly'] == b['assembly'] and a['type'] == b['type'], 'Managed gate identity changed')
         if a['method'] != b['method']:
             require(a['type'] == 'VirtualDesktop.Mobile.UserSettings' and
-                    all(re.fullmatch(r'<GetHasValidIdentityAsync>b__[0-9]+_[0-9]+', g['method']) for g in (a, b)), 'Invalid gate rename')
+                    all(isinstance(g['method'], str) and 0 < len(g['method']) <= 180 for g in (a, b)), 'Invalid gate rename')
     require(len(proof['native']) == len(previous_baseline['native']), 'Native gate count changed')
     for a, b in zip(proof['native'], previous_baseline['native']):
         require(re.fullmatch(r'[0-9a-f]{64}', a['contextSha256']) is not None, 'Invalid native context')
         require(isinstance(a.get('context'), list) and len(a['context']) == 22 and
                 fingerprint(a['context']) == a['contextSha256'], 'Native context digest mismatch')
         if a['method'] != b['method']:
-            require(all(re.fullmatch(r'UserSettings::<GetHasValidIdentityAsync>b__[0-9]+_[0-9]+', g['method']) for g in (a, b)), 'Invalid native gate rename')
+            require(all(g['method'].startswith('UserSettings::') for g in (a, b)), 'Invalid native gate rename')
     for rule in source['aotSignerHashes']['comparisons']:
         key = {'java': 'originalJavaHash', 'x509': 'originalX509Hash'}.get(rule['hash'])
         require(key is not None and type(source['managedSignerHashes'][key]) is int and

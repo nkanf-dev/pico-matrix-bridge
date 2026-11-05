@@ -104,7 +104,7 @@ jobs:
       - name: Observe and validate
         env:
           PICO_AUTH_JSON: ${{ secrets.PICO_AUTH_JSON }}
-          MIKUMIKU_API_KEY: ${{ secrets.MIKUMIKU_API_KEY }}
+          KANGLIVES_API_KEY: ${{ secrets.KANGLIVES_API_KEY }}
           FORCE_AGENT: ${{ inputs.force_agent }}
           RECHECK_CURRENT: ${{ inputs.recheck_current }}
         run: |

@@ -25,7 +25,6 @@ from compile import compile_recipe, method
 
 KEYS = ('managedSigner', 'managedLoaderIntegrity', 'managedSignerHashes')
 MAX_ENTRY = 64 * 1024 * 1024
-CALLBACK = re.compile(r'^<GetHasValidIdentityAsync>b__[0-9]+_[0-9]+$')
 
 
 def checked(condition, message):
@@ -232,11 +231,33 @@ def locate_native(code, base, rule, anchor, selected=None, method_range=None):
 
 
 def callback_candidates(image, selector):
-    """Only compiler-numbered identity callbacks, in the same declaring type."""
+    """Find identity checks by their calls, including compiler-generated callbacks."""
     pe = dnfile.dnPE(data=image)
-    names = [str(m.row.Name) for t in pe.net.mdtables.TypeDef
-             if f'{t.TypeNamespace}.{t.TypeName}' == selector['type']
-             for m in t.MethodList if CALLBACK.fullmatch(str(m.row.Name))]
+    names = []
+    required = set(selector.get('requiredCalls', []))
+    for typ in pe.net.mdtables.TypeDef:
+        if f'{typ.TypeNamespace}.{typ.TypeName}' != selector['type']:
+            continue
+        for ref in typ.MethodList:
+            row = ref.row
+            name = str(row.Name)
+            if not required or not row.Rva:
+                continue
+            try:
+                _, body = method(pe, {'type': selector['type'], 'method': name})
+                calls = set()
+                for instruction in body.instructions:
+                    token = instruction.operand
+                    if instruction.opcode.name not in ('call', 'callvirt') or not isinstance(token, Token) or token.value >> 24 != 0x0a:
+                        continue
+                    member = pe.net.mdtables.MemberRef.rows[(token.value & 0xffffff) - 1]
+                    owner = member.Class.row
+                    if hasattr(owner, 'TypeName'):
+                        calls.add(f'{owner.TypeNamespace}.{owner.TypeName}::{member.Name}')
+                if required <= calls:
+                    names.append(name)
+            except (ValueError, IndexError, AttributeError):
+                continue
     checked(len(names) <= 16, 'Too many identity callback candidates')
     return [{'method': name, **managed_gate(image, dict(selector, method=name))} for name in names]
 
@@ -308,7 +329,7 @@ def sample(apk, profile, tolerate_missing=False):
                 if not tolerate_missing:
                     raise
                 gate['missing'] = True
-                if CALLBACK.fullmatch(selector['method']):
+                if selector['type'] == 'VirtualDesktop.Mobile.UserSettings':
                     gate['candidates'] = callback_candidates(images[rule['assembly']], selector)
             gates.append(gate)
     return blob, images, loader, aot, stable, gates, len(packed)
@@ -347,9 +368,9 @@ def derive(apk, profile, proof, version_code, version_name, renames=None, native
             'Unknown selected native comparison')
     checked(isinstance(renames or [], list) and len(renames or []) <= 1, 'Too many managed mappings')
     for rename in renames or []:
-        checked(set(rename) == {'oldMethod', 'newMethod'} and CALLBACK.fullmatch(rename['oldMethod'])
-                and CALLBACK.fullmatch(rename['newMethod']) and rename['oldMethod'] != rename['newMethod'],
-                'Only compiler-numbered identity callbacks may be renamed')
+        checked(isinstance(rename, dict) and set(rename) == {'oldMethod', 'newMethod'} and
+                all(isinstance(rename[k], str) and 0 < len(rename[k]) <= 180 for k in ('oldMethod', 'newMethod')) and
+                rename['oldMethod'] != rename['newMethod'], 'Invalid identity method mapping')
         rules = [r for r in effective['managedSignerHashes']['methods'] if r['method'] == rename['oldMethod']]
         checked(len(rules) == 1 and rules[0]['type'] == 'VirtualDesktop.Mobile.UserSettings', 'Unknown managed mapping')
         rules[0]['method'] = rename['newMethod']
@@ -362,7 +383,7 @@ def derive(apk, profile, proof, version_code, version_name, renames=None, native
         if not gate.get('missing'):
             continue
         options = gate.get('candidates', [])
-        checked(CALLBACK.fullmatch(gate['method']) and len(options) == 1,
+        checked(gate['type'] == 'VirtualDesktop.Mobile.UserSettings' and len(options) == 1,
                 'Managed method changed or ambiguous: ' + gate['type'] + '::' + gate['method'])
         old_method, new_method = gate['method'], options[0]['method']
         for selector in effective['managedSignerHashes']['methods']:
