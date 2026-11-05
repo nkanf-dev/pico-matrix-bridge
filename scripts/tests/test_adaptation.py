@@ -235,6 +235,8 @@ class CommitPolicy(unittest.TestCase):
         self.assertEqual(policy.invariant_profile(old), policy.invariant_profile(renamed))
         renamed['managedSignerHashes']['methods'][2]['method'] = 'AlwaysTrue'
         self.assertNotEqual(policy.invariant_profile(old), policy.invariant_profile(renamed))
+        renamed['aotSignerHashes']['comparisons'][2]['method'] = 'UserSettings::AlwaysTrue'
+        self.assertEqual(policy.invariant_profile(old), policy.invariant_profile(renamed))
         changed = copy.deepcopy(new)
         changed['managedSignerHashes']['methods'][0]['count'] = 0
         self.assertNotEqual(policy.invariant_profile(old), policy.invariant_profile(changed))

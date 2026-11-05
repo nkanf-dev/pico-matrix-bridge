@@ -209,7 +209,7 @@ def main():
         except ValueError as error:
             report.update(state='review-required', reason=str(error))
             accepted = False
-            if os.environ.get('MIKUMIKU_API_KEY'):
+            if os.environ.get('KANGLIVES_API_KEY'):
                 report['agentUsed'] = True
                 report['agent'], candidate = agent_candidate(apk, profile, proof, version, name, args.work / 'agent', str(error), publisher_sha256)
                 if candidate is not None:

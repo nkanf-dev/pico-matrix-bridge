@@ -6,21 +6,21 @@ import shutil
 import subprocess
 import time
 
-MODEL = 'mikumiku-openai/glm-5.3-flash'
+MODEL = 'gpt-kanglives/gpt-6-luna'
 
 
 def run_agent(evidence, work):
-    key = os.environ.get('MIKUMIKU_API_KEY', '')
+    key = os.environ.get('KANGLIVES_API_KEY', '')
     if not key:
-        raise ValueError('MIKUMIKU_API_KEY is missing')
+        raise ValueError('KANGLIVES_API_KEY is missing')
     if work.exists():
         raise ValueError('Agent workspace must be new')
     work.mkdir(parents=True, mode=0o700)
     state = work / 'state'
     state.mkdir(mode=0o700)
-    (state / 'models.yml').write_text(json.dumps({'providers': {'mikumiku-openai': {
-        'baseUrl': 'https://newapi.mikumiku.love/v1', 'api': 'openai-completions',
-        'apiKey': 'MIKUMIKU_API_KEY', 'models': [{'id': 'glm-5.3-flash', 'name': 'GLM 5.3 Flash',
+    (state / 'models.yml').write_text(json.dumps({'providers': {'gpt-kanglives': {
+        'baseUrl': 'https://gpt.kanglives.top/v1', 'api': 'openai-completions',
+        'apiKey': 'KANGLIVES_API_KEY', 'models': [{'id': 'gpt-6-luna', 'name': 'GPT-6 Luna',
         'reasoning': True, 'input': ['text'], 'contextWindow': 65536, 'maxTokens': 4096,
         'cost': {'input': 0, 'output': 0, 'cacheRead': 0, 'cacheWrite': 0}}]}}}))
     evidence_path = work / 'evidence.json'
@@ -28,7 +28,7 @@ def run_agent(evidence, work):
     output = work / 'candidate.json'
     # No inherited GH_TOKEN, PICO session, SSH agent, proxy credentials or signing env.
     env = {k: os.environ[k] for k in ('PATH', 'LANG', 'TERM', 'SYSTEMROOT') if k in os.environ}
-    env.update(HOME=str(work), PI_CODING_AGENT_DIR=str(state), MIKUMIKU_API_KEY=key,
+    env.update(HOME=str(work), PI_CODING_AGENT_DIR=str(state), KANGLIVES_API_KEY=key,
                VD_AGENT_EVIDENCE=str(evidence_path), VD_AGENT_OUTPUT=str(output), NO_COLOR='1')
     executable = shutil.which('omp')
     if not executable:
