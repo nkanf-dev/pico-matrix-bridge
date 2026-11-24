@@ -1,60 +1,52 @@
 {
-  "schema": 1,
-  "inputSha256": "50d4993bfa7138e1ceb86d95fc32629585836aa2d6ac6a5e3d122a02863107ee",
-  "apkMd5": "825b3559be6f51019a5ef3c0c1c55193",
-  "apkBytes": 1115833324,
-  "profileSha256": "cffbeaf5aadb613c286eecaf55daa08a9e1be285ed70581d4ebf87812d2542a4",
+  "apkBytes": 1253110764,
+  "apkMd5": "4680162c5cde3ca8247ffcf867b7f722",
   "assemblyCount": 185,
-  "stableEntries": {
-    "classes.dex": "beb8baf5dfcf4132cb4ec7a003abd4fbc1b7a0cc425b213843a92086579990b8",
-    "resources.arsc": "1bece49a935178130249144ff5601596e94a8adf0df82459d59b0663c690c0b7"
-  },
   "gates": [
     {
       "assembly": "VirtualDesktop.Android.dll",
-      "type": "VirtualDesktop.VrApp",
+      "instructionCount": 127,
       "method": "OnCreate",
       "sha256": "18056d0f812728da8801b89b5bf7dbbd950fe6ca5c8796d8471fd264da07ea6f",
       "token": "0x06000018",
-      "instructionCount": 127
+      "type": "VirtualDesktop.VrApp"
     },
     {
       "assembly": "Pico.Platform.dll",
-      "type": "Pico.Platform.PlatformInitialize",
+      "instructionCount": 57,
       "method": ".ctor",
       "sha256": "8b96a8925a8d4aee7221f7e51f70b55dfea636696a05fdf94b5020d001b388a1",
       "token": "0x06000027",
-      "instructionCount": 57
+      "type": "Pico.Platform.PlatformInitialize"
     },
     {
       "assembly": "VirtualDesktop.Mobile.dll",
-      "type": "VirtualDesktop.Mobile.InputSystem",
+      "instructionCount": 48,
       "method": ".ctor",
-      "sha256": "b35760d84d9dbdf620645a2e1ce590fcdaf3dafd0574b737fc6535ef1e4341a8",
+      "sha256": "83709575930ef569f2f69d54c7f578cd6af1c9ba142c101f7ee6ebd02494c21f",
       "token": "0x060002b5",
-      "instructionCount": 48
+      "type": "VirtualDesktop.Mobile.InputSystem"
     },
     {
       "assembly": "VirtualDesktop.Mobile.dll",
-      "type": "VirtualDesktop.Mobile.Keyboard",
+      "instructionCount": 109,
       "method": ".ctor",
-      "sha256": "707be38f961977164c73a22595f35fc4562394a791f0c945ac3b0a7719e621e3",
+      "sha256": "d5be65c7de61d29b28eaf1379b80aa2fa1ad26ed5052114a337a52c681aa1ae9",
       "token": "0x060002b8",
-      "instructionCount": 109
+      "type": "VirtualDesktop.Mobile.Keyboard"
     },
     {
       "assembly": "VirtualDesktop.Mobile.dll",
-      "type": "VirtualDesktop.Mobile.UserSettings",
+      "instructionCount": 29,
       "method": "<GetHasValidIdentityAsync>b__478_0",
-      "sha256": "01d9a668917859eb257f7c3306ffc6cc43aa69a1538205056b0480528b12bee8",
-      "token": "0x060007d7",
-      "instructionCount": 29
+      "sha256": "f39a80021c5004d52645846c3e37857e31196641ea7fb09c5dc5ae64d07d1eb2",
+      "token": "0x060007f2",
+      "type": "VirtualDesktop.Mobile.UserSettings"
     }
   ],
+  "inputSha256": "4825d10f14cc071e8ceeded95a3f5c77666e5f0a875609236f518d51afe540f5",
   "native": [
     {
-      "method": "InputSystem::.ctor",
-      "contextSha256": "26d716ed4380ae9b34186def8ecacacf38066b897f86197c43aac3a389116f10",
       "context": [
         [
           "blr",
@@ -144,11 +136,11 @@
           "cbnz",
           "x1, <relative:168>"
         ]
-      ]
+      ],
+      "contextSha256": "26d716ed4380ae9b34186def8ecacacf38066b897f86197c43aac3a389116f10",
+      "method": "InputSystem::.ctor"
     },
     {
-      "method": "Keyboard::.ctor",
-      "contextSha256": "0dd2f7fef6f5766ad31b82618d840b35650357c21392a1cedfa6b1abcb9d93ae",
       "context": [
         [
           "mov",
@@ -238,11 +230,11 @@
           "str",
           "w8, [x19, #0x4f4]"
         ]
-      ]
+      ],
+      "contextSha256": "0dd2f7fef6f5766ad31b82618d840b35650357c21392a1cedfa6b1abcb9d93ae",
+      "method": "Keyboard::.ctor"
     },
     {
-      "method": "UserSettings::<GetHasValidIdentityAsync>b__478_0",
-      "contextSha256": "666c0a56bcc0b950fd14b2ecd5854247d518826198f09dea246c3ce20a76269e",
       "context": [
         [
           "mov",
@@ -332,7 +324,15 @@
           "b",
           "<relative:44>"
         ]
-      ]
+      ],
+      "contextSha256": "666c0a56bcc0b950fd14b2ecd5854247d518826198f09dea246c3ce20a76269e",
+      "method": "UserSettings::<GetHasValidIdentityAsync>b__478_0"
     }
-  ]
+  ],
+  "profileSha256": "e4587a136f9f2a2b7e529bb5a9c1d1f75cb6ea237db35410e626fc5cab5e1885",
+  "schema": 1,
+  "stableEntries": {
+    "classes.dex": "beb8baf5dfcf4132cb4ec7a003abd4fbc1b7a0cc425b213843a92086579990b8",
+    "resources.arsc": "1bece49a935178130249144ff5601596e94a8adf0df82459d59b0663c690c0b7"
+  }
 }
